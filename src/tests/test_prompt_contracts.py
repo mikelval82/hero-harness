@@ -207,9 +207,10 @@ def test_skill_library_contracts_are_declared():
 def test_refiner_post_mission_contracts_are_declared():
     doc = Path("research_plan/refiner_post_mission.md").read_text(encoding="utf-8")
     prompt = Path("prompts/refiner-prompt.md").read_text(encoding="utf-8")
+    command = Path("commands/refine-harness.md").read_text(encoding="utf-8")
     agents_map = Path("AGENTS.md").read_text(encoding="utf-8")
 
-    for text in (doc, prompt):
+    for text in (doc, prompt, command):
         assert "refiner-proposal.md" in text
         assert "approval_required: true" in text or "aprobacion humana" in text
         assert "auto_apply: false" in text or "No apliques parches" in text

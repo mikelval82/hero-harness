@@ -54,6 +54,7 @@ interactivo solamente.
 
 | Command | Proposito |
 |---------|-----------|
+| `/mission-align` | Sesion de alineacion previa a una mision autonoma |
 | `/grill` | Interrogatorio exhaustivo antes de disenar/implementar |
 | `/grill-content` | Alineacion antes de crear/modificar documentacion |
 | `/checkpoint` | Verificacion activa de comprension sobre un documento |

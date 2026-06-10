@@ -180,6 +180,7 @@ hero-harness/
 │   ├── analysis/        # tree-sitter code graph
 │   └── tests/           # Unit tests
 ├── agents/              # Sub-agent definitions (researcher, planner, ...)
+├── commands/            # Interactive skills (/grill, /diagnose, /zoom-out, ...)
 ├── prompts/             # Phase prompt templates
 ├── benchmark/           # Tron Arena benchmark
 ├── docs/research/       # Literature review (harness-engineering papers)
