@@ -1,0 +1,27 @@
+# Environment / secrets
+.env
+.env.local
+src/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.uv-cache/
+.pytest_cache/
+
+# Harness runtime / ephemeral data
+.harness/
+telemetry/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

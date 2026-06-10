@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-harness"
+version = "0.1.0"
+description = "A runtime control system around foundation models for autonomous software-engineering missions."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Mikel Val Calvo" }]
+keywords = ["llm", "agents", "harness", "anthropic", "claude", "agentic", "autonomous-software-engineering"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "anthropic>=0.84.0",
+    "tree-sitter>=0.23",
+    "tree-sitter-python>=0.23",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage = "https://github.com/<your-username>/claude-harness"
+Repository = "https://github.com/<your-username>/claude-harness"
+Issues = "https://github.com/<your-username>/claude-harness/issues"
+
+[tool.setuptools]
+packages = ["src", "benchmark"]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests", "benchmark"]
