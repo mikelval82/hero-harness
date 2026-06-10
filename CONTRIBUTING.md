@@ -1,6 +1,6 @@
-# Contributing to Claude Harness
+# Contributing to HERO
 
-Thanks for your interest in improving Claude Harness! This document explains how to set
+Thanks for your interest in improving HERO! This document explains how to set
 up your environment, the conventions we follow, and how to submit changes.
 
 ## Getting started

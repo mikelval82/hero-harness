@@ -1,13 +1,15 @@
-# Claude Harness
+# HERO
+
+**HERO** stands for **H**arness for **E**ngineering and **R**un-time **O**rchestration.
 
 > A runtime **control system** around foundation models for autonomous software-engineering missions.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/mikelval82/claude-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelval82/claude-harness/actions/workflows/ci.yml)
+[![CI](https://github.com/mikelval82/hero-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelval82/hero-harness/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-Claude Harness is **not** a single agent. It is a control system that wraps a large
+HERO is **not** a single agent. It is a control system that wraps a large
 language model and turns it into a reliable software engineer: it prepares context,
 routes models per phase, executes work through tools, validates artifacts, recovers
 from failures, records traces, and keeps reusable learning across missions.
@@ -112,8 +114,8 @@ decides which phases run in each block:
 ### Install
 
 ```bash
-git clone https://github.com/mikelval82/claude-harness.git
-cd claude-harness
+git clone https://github.com/mikelval82/hero-harness.git
+cd hero-harness
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Unix:    source .venv/bin/activate
@@ -168,7 +170,7 @@ See [`benchmark/tron_arena/README.md`](benchmark/tron_arena/README.md) for the f
 ## Repository layout
 
 ```
-claude-harness/
+hero-harness/
 ├── src/                 # Harness engine (mission orchestration, agent loop, memory)
 │   ├── cli.py           # Entry point
 │   ├── agent/           # Tool-using agentic loop

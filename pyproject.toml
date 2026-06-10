@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "claude-harness"
+name = "hero-harness"
 version = "0.1.0"
-description = "A runtime control system around foundation models for autonomous software-engineering missions."
+description = "HERO — Harness for Engineering and Run-time Orchestration: a runtime control system around foundation models for autonomous software-engineering missions."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
@@ -28,9 +28,9 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.urls]
-Homepage = "https://github.com/mikelval82/claude-harness"
-Repository = "https://github.com/mikelval82/claude-harness"
-Issues = "https://github.com/mikelval82/claude-harness/issues"
+Homepage = "https://github.com/mikelval82/hero-harness"
+Repository = "https://github.com/mikelval82/hero-harness"
+Issues = "https://github.com/mikelval82/hero-harness/issues"
 
 [tool.setuptools]
 packages = ["src", "benchmark"]

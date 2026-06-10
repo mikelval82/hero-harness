@@ -1,7 +1,7 @@
 # Research foundation
 
 This directory contains **reading notes and summaries** of the academic work that informs
-the design of Claude Harness. They are study notes, not the original papers.
+the design of HERO. They are study notes, not the original papers.
 
 > The original PDFs are **not** redistributed here for copyright reasons. Each summary
 > references the paper title and (where available) its arXiv identifier so you can find
@@ -26,5 +26,5 @@ the design of Claude Harness. They are study notes, not the original papers.
 ## Why this matters
 
 The core thesis across these works is that autonomous software capability is an emergent
-property of the `model × harness × environment` system. Claude Harness is a concrete
+property of the `model × harness × environment` system. HERO is a concrete
 implementation of that idea.

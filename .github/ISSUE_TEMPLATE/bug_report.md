@@ -27,4 +27,4 @@ What actually happened (include logs / tracebacks if relevant).
 
 - OS:
 - Python version:
-- Claude Harness version / commit:
+- HERO version / commit:
