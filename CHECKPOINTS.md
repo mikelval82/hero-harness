@@ -51,6 +51,7 @@
 
 ---
 
-**Como usar este archivo:** el agente `reviewer` recorre los checkpoints
-relevantes, marca `[x]` los que se cumplen, `[ ]` los que no, y emite
-su veredicto en `$CLAUDE_HARNESS/audit.md`.
+**Como usar este archivo:** el agente `reviewer` (paso 6 de su protocolo) lee
+este archivo cuando esta disponible, recorre los checkpoints relevantes, marca
+`[x]` los que se cumplen, `[ ]` los que no, y emite su veredicto en
+`$CLAUDE_HARNESS/audit.md`.

@@ -7,8 +7,9 @@ para comunicarse sin ambiguedad.
 
 **Agente**:
 Un agente especializado que ejecuta una fase del pipeline (researcher,
-specifier, planner, implementer, reviewer). En modo autonomo, cada agente
-se invoca directamente via `claude -p` — no hay intermediarios.
+structurer, griller, specifier, planner, implementer, reviewer). En modo
+autonomo, cada agente se invoca directamente via `claude -p` — no hay
+intermediarios.
 _Evitar_: subagente, worker, helper
 
 ## Artefactos del pipeline
@@ -37,7 +38,7 @@ _Evitar_: review, feedback, evaluacion
 ## Herramientas
 
 **Skill**:
-Un slash command (archivo `.md` en `~/.claude/commands/`) que encapsula un
+Un slash command (archivo `.md` en `commands/`) que encapsula un
 proceso repetible. Los skills son pequenos, componibles y adaptables.
 _Evitar_: comando, macro, receta
 

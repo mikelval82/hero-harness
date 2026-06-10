@@ -186,14 +186,14 @@ hero-harness/
 ├── docs/research/       # Literature review (harness-engineering papers)
 ├── AGENTS.md            # Methodology map
 ├── CHECKPOINTS.md       # Universal quality criteria
-├── CONTEXT.md           # Shared methodology vocabulary
+├── GLOSSARY.md          # Shared methodology vocabulary
 └── harness-diagram.md   # Architecture & flow diagrams
 ```
 
 ## Methodology & research
 
 - [`AGENTS.md`](AGENTS.md) — the methodology map and agent registry.
-- [`CONTEXT.md`](CONTEXT.md) — shared vocabulary of the methodology.
+- [`GLOSSARY.md`](GLOSSARY.md) — shared vocabulary of the methodology.
 - [`CHECKPOINTS.md`](CHECKPOINTS.md) — universal quality criteria.
 - [`docs/research/`](docs/research/) — summaries of the academic work this harness builds on
   (AI Harness Engineering, Reflexion, Voyager, DSPy, TextGrad, and more).
