@@ -16,7 +16,7 @@ directamente via `claude -p` con sus instrucciones inlined. No hay capa intermed
 
 | Agent | Rol | Produce |
 |-------|-----|---------|
-| `researcher` | Investiga el codebase, explora enfoques. No escribe codigo. | `brainstorm.md` + `tasks.json` + `context-hot.md` |
+| `researcher` | Investiga el codebase, explora enfoques. No escribe codigo. | `brainstorm.md` + `context-hot.md` |
 | `griller` | Interrogatorio exhaustivo para resolver ambiguedades antes de disenar. | `brief.md` |
 | `structurer` | Genera estructura de tareas a partir del brainstorm. | `tasks.json` |
 | `specifier` | Crea especificacion tecnica a partir del sprint. No escribe codigo. | `spec.md` + append a `context-hot.md` |
@@ -44,7 +44,7 @@ interactivo solamente.
 
 | Command | Agente | Lee de | Escribe en |
 |---------|--------|--------|------------|
-| `/brainstorm` | `researcher` | Codebase | `brainstorm.md` + `tasks.json` + `context-hot.md` |
+| `/brainstorm` | `researcher` | Codebase | `brainstorm.md` + `context-hot.md` |
 | `/spec-task` | `specifier` | `brainstorm.md`, `tasks.json`, `context-cold.md`, `context-hot.md` | `spec.md` + append `context-hot.md` |
 | `/plan-task` | `planner` | `spec.md`, `brainstorm.md`, `context-cold.md`, `context-hot.md` | `plan.md`, `decisions.md` + append `context-hot.md` |
 | `/implement-task` | `implementer` | `plan.md`, `spec.md`, `decisions.md`, `context-cold.md`, `context-hot.md` | Codigo + `status.md` + append `context-hot.md` |
