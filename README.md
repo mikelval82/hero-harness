@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/<your-username>/claude-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/<your-username>/claude-harness/actions/workflows/ci.yml)
+[![CI](https://github.com/mikelval82/claude-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelval82/claude-harness/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 Claude Harness is **not** a single agent. It is a control system that wraps a large
@@ -112,7 +112,7 @@ decides which phases run in each block:
 ### Install
 
 ```bash
-git clone https://github.com/<your-username>/claude-harness.git
+git clone https://github.com/mikelval82/claude-harness.git
 cd claude-harness
 python -m venv .venv
 # Windows: .venv\Scripts\activate

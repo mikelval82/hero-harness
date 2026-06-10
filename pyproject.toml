@@ -28,9 +28,9 @@ dependencies = [
 dev = ["pytest>=8.0"]
 
 [project.urls]
-Homepage = "https://github.com/<your-username>/claude-harness"
-Repository = "https://github.com/<your-username>/claude-harness"
-Issues = "https://github.com/<your-username>/claude-harness/issues"
+Homepage = "https://github.com/mikelval82/claude-harness"
+Repository = "https://github.com/mikelval82/claude-harness"
+Issues = "https://github.com/mikelval82/claude-harness/issues"
 
 [tool.setuptools]
 packages = ["src", "benchmark"]
