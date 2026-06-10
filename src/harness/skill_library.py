@@ -28,7 +28,7 @@ name: Prompt/Gate Contract Change
 version: 1
 status: verified
 source: seed
-evidence: tasks 8, 13, 14, 15 in research_plan/checkpoints.md
+evidence: tasks 8, 13, 14, 15 in docs/design/checkpoints.md
 triggers:
   - prompt contract
   - gate marker
@@ -57,7 +57,7 @@ prompts, gates, staged harness artifacts, or deterministic checks.
 6. Add or adjust gate checks only when the artifact is a required output.
 7. Add focused tests for setup, include injection, prompt contracts, and runner
    sync behavior.
-8. Update the research_plan checkpoint with files changed, verification commands,
+8. Update the design checkpoint with files changed, verification commands,
    evidence, and residual risks.
 
 ## Required Verification
@@ -71,7 +71,7 @@ prompts, gates, staged harness artifacts, or deterministic checks.
 
 This pattern was verified by the project-memory, mission case-base, deterministic
 check registry, and prompt signature tasks recorded in
-`research_plan/checkpoints.md`.
+`docs/design/checkpoints.md`.
 
 ## Risks
 

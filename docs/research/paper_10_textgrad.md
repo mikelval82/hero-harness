@@ -188,7 +188,7 @@ TextGrad modela un sistema compuesto como grafo de variables optimizables con "g
 
 ### Refiner post-misión estilo TGD (offline, con aprobación humana)
 - **Del paper:** optimizar prompts/componentes a partir de la loss agregada.
-- **En HERO:** el refiner trata `agents/*.md`/`prompts/*.md` como variables y propone parches (`refiner-proposal.md`) solo si hay fallos recurrentes (`REFINER_MIN_RECURRENCE=2` en `src/harness/refiner.py`); es offline y requiere aprobación humana (`commands/refine-harness.md`, `research_plan/refiner_post_mission.md`). No hay auto-modificación en vivo.
+- **En HERO:** el refiner trata `agents/*.md`/`prompts/*.md` como variables y propone parches (`refiner-proposal.md`) solo si hay fallos recurrentes (`REFINER_MIN_RECURRENCE=2` en `src/harness/refiner.py`); es offline y requiere aprobación humana (`commands/refine-harness.md`, `docs/design/refiner_post_mission.md`). No hay auto-modificación en vivo.
 
 ## 5. No adoptado (y por qué)
 

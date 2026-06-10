@@ -184,6 +184,7 @@ hero-harness/
 ├── prompts/             # Phase prompt templates
 ├── benchmark/           # Tron Arena benchmark
 ├── docs/research/       # Literature review (harness-engineering papers)
+├── docs/design/         # Internal design specs of harness features
 ├── AGENTS.md            # Methodology map
 ├── CHECKPOINTS.md       # Universal quality criteria
 ├── GLOSSARY.md          # Shared methodology vocabulary
@@ -197,6 +198,8 @@ hero-harness/
 - [`CHECKPOINTS.md`](CHECKPOINTS.md) — universal quality criteria.
 - [`docs/research/`](docs/research/) — summaries of the academic work this harness builds on
   (AI Harness Engineering, Reflexion, Voyager, DSPy, TextGrad, and more).
+- [`docs/design/`](docs/design/) — internal design specs of harness features
+  (skill library, mission case base, refiner, deterministic check registry, and more).
 
 ## Contributing
 

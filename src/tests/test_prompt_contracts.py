@@ -47,7 +47,7 @@ def test_evidence_anchoring_contracts_are_declared():
     implementer = Path("agents/implementer.md").read_text(encoding="utf-8")
     review_prompt = Path("prompts/review-prompt.md").read_text(encoding="utf-8")
     implement_prompt = Path("prompts/implement-prompt.md").read_text(encoding="utf-8")
-    audit = Path("research_plan/evidence_anchored_instruction_audit.md").read_text(encoding="utf-8")
+    audit = Path("docs/design/evidence_anchored_instruction_audit.md").read_text(encoding="utf-8")
 
     for text in (reviewer, review_prompt):
         assert "Evidence Anchoring" in text
@@ -99,7 +99,7 @@ def test_deterministic_check_registry_contracts_are_declared():
     implement_prompt = Path("prompts/implement-prompt.md").read_text(encoding="utf-8")
     burst_prompt = Path("prompts/implement-burst-prompt.md").read_text(encoding="utf-8")
     reimplement_prompt = Path("prompts/reimplement-prompt.md").read_text(encoding="utf-8")
-    doc = Path("research_plan/deterministic_check_registry.md").read_text(encoding="utf-8")
+    doc = Path("docs/design/deterministic_check_registry.md").read_text(encoding="utf-8")
 
     for text in (specifier, reviewer, spec_prompt, review_prompt, doc):
         assert "Deterministic Check Registry" in text
@@ -166,13 +166,13 @@ def test_project_memory_contracts_are_declared():
 
 
 def test_mission_case_base_contracts_are_declared():
-    doc = Path("research_plan/mission_case_base.md").read_text(encoding="utf-8")
+    doc = Path("docs/design/mission_case_base.md").read_text(encoding="utf-8")
     for marker in ("cases.jsonl", "retrieved-cases.md", "similitud", "aprobadas"):
         assert marker in doc
 
 
 def test_skill_library_contracts_are_declared():
-    doc = Path("research_plan/skill_library.md").read_text(encoding="utf-8")
+    doc = Path("docs/design/skill_library.md").read_text(encoding="utf-8")
     for marker in (
         "skills.jsonl",
         "retrieved-skills.md",
@@ -205,7 +205,7 @@ def test_skill_library_contracts_are_declared():
 
 
 def test_refiner_post_mission_contracts_are_declared():
-    doc = Path("research_plan/refiner_post_mission.md").read_text(encoding="utf-8")
+    doc = Path("docs/design/refiner_post_mission.md").read_text(encoding="utf-8")
     prompt = Path("prompts/refiner-prompt.md").read_text(encoding="utf-8")
     command = Path("commands/refine-harness.md").read_text(encoding="utf-8")
     agents_map = Path("AGENTS.md").read_text(encoding="utf-8")
@@ -225,7 +225,7 @@ def test_refiner_post_mission_contracts_are_declared():
 
 
 def test_partial_harness_mode_contracts_are_declared():
-    doc = Path("research_plan/partial_harness_mode.md").read_text(encoding="utf-8")
+    doc = Path("docs/design/partial_harness_mode.md").read_text(encoding="utf-8")
     report_prompt = Path("prompts/report-plan-only-prompt.md").read_text(encoding="utf-8")
 
     for marker in (

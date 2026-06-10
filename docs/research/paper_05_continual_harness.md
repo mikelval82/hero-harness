@@ -56,7 +56,7 @@ HERO toma la **versión segura** de Continual Harness: un refiner que mejora el 
 
 ### Refiner post-misión (la idea fuerte del paper, adaptada)
 - **Del paper:** un Refiner en outer loop que observa trazas y edita el harness (prompts, sub-agentes, skills, memoria).
-- **En HERO:** `src/harness/refiner.py` lee `_telemetry.jsonl`, los `audit.md` y los fallos de la case base, detecta firmas de fallo recurrentes (`failure_type@stage` con recurrencia ≥ `REFINER_MIN_RECURRENCE = 2`) y **escribe una propuesta** (`refiner-proposal.md`) con evidencia y acciones. No aplica cambios: requiere aprobación humana (contrato en `research_plan/refiner_post_mission.md`, skill `commands/refine-harness.md`).
+- **En HERO:** `src/harness/refiner.py` lee `_telemetry.jsonl`, los `audit.md` y los fallos de la case base, detecta firmas de fallo recurrentes (`failure_type@stage` con recurrencia ≥ `REFINER_MIN_RECURRENCE = 2`) y **escribe una propuesta** (`refiner-proposal.md`) con evidencia y acciones. No aplica cambios: requiere aprobación humana (contrato en `docs/design/refiner_post_mission.md`, skill `commands/refine-harness.md`).
 
 ### Failure-signature detection sobre trazas
 - **Del paper:** detectar loops, fallos de tool-call y objetivos estancados desde las trazas.

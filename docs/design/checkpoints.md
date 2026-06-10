@@ -1,7 +1,6 @@
 # Checkpoints — mejoras del harness
 
-**Fecha de creación:** 2026-05-27  
-**Fuente:** `research_plan/prioridades_mejora_harness.md`
+**Fecha de creación:** 2026-05-27
 
 Este archivo registra el avance de implementación de las mejoras priorizadas del harness. La regla es simple: una tarea solo se marca como completada cuando tiene **cambio aplicado**, **verificación mínima** y **evidencia registrada**.
 
