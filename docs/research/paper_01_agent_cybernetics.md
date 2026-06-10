@@ -38,68 +38,36 @@ El paper dedica una sección (5.1) a code-gen. Tres recomendaciones operativas:
 
 ---
 
-## 4. Mapeo a nuestro harness (qué tenemos vs qué falta)
+## 4. Qué adoptamos en HERO y cómo está implementado
 
-| Principio | Cobertura actual | Gap concreto |
-|-----------|------------------|--------------|
-| P1 Closed-loop | ✅ reviewer + reimplement loop, `audit.md` se re-inyecta en REIMPLEMENT con la instrucción "fix ONLY what the reviewer flagged" | ⚠️ No exige un bloque `[diagnosis]` explícito. El reimplementer puede arreglar sin verbalizar root cause. **Feedback blindness** sigue posible en silencio. |
-| P2 Requisite variety | Parcial: `tools` se configuran por fase (DEFAULT, IMPL_TOOLS, REVIEW_TOOLS) | No hay métrica formal de variedad. Probablemente innecesario formalizar. |
-| P3 Goal homeostasis | Parcial: `grill` produce `brief.md` que sí entra en cada fase; `spec.md` se incluye en plan/implement/review | ❌ En IMPLEMENT_BURSTS no se re-inyecta `spec.md` entre bursts. **Goal drift** plausible en tareas L con muchos pasos. ❌ No hay clasificación DONE/IN-PROGRESS/BROKEN explícita en `status.md`. ❌ No hay disparador de "outer loop reformulation" tras m fallos. |
-| P4 Black-box | Parcial: `build_code_graph` es una sonda al entorno | No hay modelo del entorno externo (APIs, sistema de ficheros). El agente asume comportamiento de tools. |
-| P5 Second-order | Parcial: reviewer externo. HITL escala a humano | ❌ El agente no detecta su propio looping. Si el implementer hace 5 ediciones que rotan sobre el mismo bug, no hay detector. ❌ No hay calibración de confianza propia. |
-| P6 Context entropy min | Parcial: hot/cold con compactación tras cada tarea | ⚠️ La compactación es **por bytes**, no por mutual information. El paper articula exactamente la crítica que ya hicimos en sesión previa. |
+Los principios cibernéticos de este paper se materializan en HERO de forma concreta:
 
----
+### P1 — Closed-loop feedback + diagnosis gate (R-CG1)
+- **Del paper:** toda edición posterior a un fallo debe ir precedida de un bloque `[diagnosis]` con root cause; las ediciones sin diagnóstico se rechazan para combatir la *feedback blindness*.
+- **En HERO:** la fase `REIMPLEMENT` exige una sección `## Diagnosis` que el gate valida antes de aceptar el trabajo (`GATE_REQUIRED_MARKERS` en `src/core/gate.py`). El veredicto del reviewer (`audit.md`) se re-inyecta en `REIMPLEMENT` como artefacto de entrada (`PHASE_REGISTRY` en `src/core/context.py`; orquestación en `src/mission/hitl.py`), cerrando el loop reviewer → reimplement.
 
-## 5. Análisis Riesgo · Beneficio · Impacto · Novedad
+### P2 — Requisite variety: herramientas por fase
+- **Del paper:** la variedad interna del agente debe igualar la del entorno; ni más ni menos.
+- **En HERO:** cada fase recibe un conjunto de herramientas acotado a su función vía `DEFAULT_TOOLS`, `IMPL_TOOLS` y `REVIEW_TOOLS` (`src/core/context.py`). El reviewer no tiene `Edit` (no puede tocar código); el implementer sí.
 
-### 5.1 Como aporte al **harness** (implementación)
+### P3 — Goal homeostasis: estado explícito y re-anclaje del objetivo
+- **Del paper:** mantener el objetivo dentro de su región viable y re-inyectarlo periódicamente para evitar *goal drift*.
+- **En HERO:** `spec.md` se re-inyecta en cada burst de implementación (`run_implement_bursts` en `src/mission/burst_runner.py`), y el gate exige un marcador `STATUS: DONE | BLOCKED` al cierre de `status.md` (`src/core/gate.py`).
 
-| Recomendación | Coste (Riesgo) | Beneficio | Impacto | Novedad |
-|---------------|----------------|-----------|---------|---------|
-| **Diagnosis gate (R-CG1)** en REIMPLEMENT | Bajo. Editar `reimplement-prompt.md` + añadir validador en gate | Alto. Combate feedback blindness, que es el fallo dominante en bug-fix iterativo | Alto sobre tareas con audit rechazado | Baja (ya lo hacen muchos harnesses, p.ej. Aider) |
-| **Spec re-injection en bursts (R-CG2 inner)** | Bajo-Medio. Tocar `burst_runner.py` para inyectar `spec.md` cada N pasos | Alto en tareas L con muchos bursts. Mitiga goal drift | Medio (sólo afecta complexity=L) | Baja |
-| **GoalState explícito en `status.md`** (R-CG2 parte 1) | Medio. Cambia formato de status; reviewer debe parsearlo; tests | Medio. Hace progreso explícito | Medio | Media (la mayoría de harnesses no formalizan esto) |
-| **Outer-loop reformulation tras m audits fallidos** (R-CG2 parte 2) | Medio-Alto. Lógica nueva en `HitlReviewer` + un agente "reformulator" o re-grill | Alto si tienes tareas que entran en loops largos de retry | Bajo (raro que pase N>3 retries antes de /skip) | Alta — pocos harnesses tienen esto formalizado |
-| **MI-weighted compaction (P6)** | Alto. Requiere benchmark previo para validar qué información predice acciones futuras | Incierto. Suena bien, no hay evidencia | Medio | Alta como contribución de research |
-| **Self-loop detection (P5)** | Medio. Heurística sobre diffs de status.md entre intentos | Medio. Cubre el "el implementer hace lo mismo 5 veces" | Medio | Media |
-| **Skill library promocionada automáticamente (R-CG3)** | Muy alto. Memoria persistente fuera del workspace efímero, política de promoción, validación en held-out | Alto a largo plazo, nulo a corto | Bajo (sólo importa tras N misiones) | Media (Voyager ya lo hace) |
+### P5 — Second-order regulation: auto-verificación y refiner offline
+- **Del paper:** el agente debe monitorizar su propio razonamiento y escalar cuando detecta degradación.
+- **En HERO:** las fases `IMPLEMENT`/`REIMPLEMENT` exigen una sección `## Self-Verification` validada por el gate (`src/core/gate.py`, contrato en `agents/implementer.md`). Fuera del loop, el **refiner post-misión** (`src/harness/refiner.py`) detecta firmas de fallo recurrentes (`failure_type@stage`, recurrencia ≥ 2) a partir de `_telemetry.jsonl` y **propone** mejoras sin aplicarlas. El control de bucles se realiza vía HITL (`src/mission/hitl.py`: retry/skip/abort).
 
-### 5.2 Como aporte al **paper / benchmark**
+### P6 — Context entropy minimization: compactación hot → cold
+- **Del paper:** el contexto es un canal finito; retener solo lo que aporta información a la decisión.
+- **En HERO:** la pizarra `context-hot.md` se compacta a `context-cold.md` tras cada tarea (`compact_context` + fase `COMPACT` + `prompts/compact-prompt.md`). La compactación es **basada en contenido** (un resumen producido por el modelo que preserva paths, patrones y gotchas), no ponderada por información mutua.
 
-| Dimensión | Valoración |
-|-----------|------------|
-| **Útil como marco teórico para citar** | **Alto.** Da vocabulario riguroso (feedback blindness, goal drift, variety, second-order regulation, channel capacity) para describir lo que nuestro harness hace y por qué. |
-| **Útil como predicción a falsar** | **Alto.** El paper hace afirmaciones específicas (p.ej. "feedback-blindness es el bottleneck dominante en code-gen"). Nuestro benchmark puede testar si harness con R-CG1 supera harness sin R-CG1. |
-| **Útil como SOTA contra el que posicionarse** | **Medio.** No es comparable: es teórico, no empírico. Citarlo refuerza la narrativa "implementamos y medimos lo que ellos sólo postulan". |
-| **Riesgo de over-claim** | **Medio.** El paper es ambicioso pero no aporta evidencia. Si lo citamos como "scientific foundation", debemos ser explícitos en que es un position paper. |
+### Soporte adicional alineado con el paper
+- **Code graph como sonda del entorno (P4):** `src/analysis/` construye un grafo de dependencias con tree-sitter (`builder.py`, `code_graph.py`: `dependents`, `impact-analysis`).
+- **Skill library (R-CG3):** `src/harness/skill_library.py` persiste y recupera skills por similitud léxica (`retrieved-skills.md`).
 
----
+## 5. No adoptado (y por qué)
 
-## 6. Decisiones recomendadas
-
-### Si queremos enriquecer el **harness** (prioridad por ratio impacto/coste):
-
-1. **R-CG1 (Diagnosis gate)** — sí, primera incorporación. Pequeño, defendible, directamente medible: con/sin diagnosis, ¿mejora el pass rate tras reimplement?
-2. **Spec re-injection en bursts** — sí, segunda. Cambio quirúrgico en `burst_runner.py`. Defendible empíricamente.
-3. **Self-loop detection (P5)** — explorar tras MVP. Implementable como heurística sobre history de status.md.
-4. **Outer-loop reformulation** — investigar como skill nuevo, no como parte del runner. Es un patrón de research más grande.
-5. **MI-weighted compaction** — fuera del MVP. Requiere su propio mini-benchmark para definir qué es "información útil".
-6. **Skill library automatizada** — fuera del scope. Voyager/continual-harness ya lo cubren mejor.
-
-### Si queremos enriquecer el **paper**:
-
-- **Citar como theoretical framing** en la sección de fundamentos. Útil para describir las hipótesis (H1-H5) en lenguaje de cibernética.
-- **No tratar como SOTA empírico** — el paper no compite con SWE-bench ni con nuestro benchmark. Es complementario.
-- **Posible hipótesis derivada (opcional):** H6 — "Un harness con diagnosis gate (R-CG1) reduce el número de retries necesarios para llegar a APPROVED frente a uno sin él". Sería un experimento ablativo dentro del propio harness, independiente del benchmark principal.
-
----
-
-## 7. Veredicto franco
-
-- **Como teoría:** sólida y bien articulada. Da vocabulario que el campo necesita. La mayoría de sus afirmaciones son razonables aunque algunas son retóricas (mapear cibernética a LLMs tiene tirón, pero el paralelo Shannon ↔ context window es más analogía que teorema operativo).
-- **Como guía de ingeniería:** las 3 recomendaciones de code-gen son concretas y aplicables. R-CG1 es la fruta colgada baja.
-- **Riesgo de adoptar todo:** alto si lo tratamos como religión. Bajo si extraemos las 2-3 cosas pequeñas que son baratas y medibles.
-- **Honestamente:** el paper sería más fuerte con un solo experimento. La ausencia de validación empírica es su mayor debilidad — y es exactamente el hueco que **nuestro** benchmark puede llenar parcialmente.
-
-**Acción concreta sugerida:** anotar **R-CG1 (diagnosis gate)** como candidato a implementar y benchmarkear como sub-experimento del paper propio, antes de invertir en cualquier otra recomendación.
+- **Compactación ponderada por información mutua (P6 ideal):** la compactación es por resumen de contenido, no por *mutual information*. Formalizarla requeriría un benchmark propio para definir qué información predice acciones futuras.
+- **Detección de bucles en tiempo real (P5):** no hay un detector automático que reconozca que el agente repite la misma edición; el control de bucles es vía HITL y el refiner offline.
+- **Reformulación del objetivo en outer-loop tras *m* fallos:** no existe como lógica automática del runner; es un patrón de investigación más amplio.

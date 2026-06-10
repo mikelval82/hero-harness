@@ -42,102 +42,25 @@ Optimizadores. Input: programa DSPy + métrica + pocos ejemplos (opcionalmente e
 
 ---
 
-## 3. Mapeo a nuestro harness
+## 3. Qué adoptamos en HERO y cómo está implementado
 
-| DSPy | Nuestro harness | Estado |
-|------|-----------------|--------|
-| Signature | Cabeceras de prompts en `prompts/*.md` (input fields del template) | ⚠️ Implícitas, no formales. No hay tipado de IO. |
-| Module | Nuestros **agentes** (`researcher`, `specifier`, `planner`, `implementer`, `reviewer`) | ⚠️ Funcionalmente similares pero hand-crafted, no parametrizados |
-| Teleprompter / compiler | — | ❌ No tenemos. Prompts y agentes son hand-tuned. |
-| Bootstrap de demonstraciones | — | ❌ No tenemos. No persistimos trazas exitosas como few-shot examples para futuras misiones (gap ya identificado en paper 02). |
-| Métrica de optimización | — | ❌ Implícita (APPROVED del reviewer), no formalizada como score numérico para optimizar |
-| Pipeline como grafo computacional | `PHASE_REGISTRY` + `MissionRunner` | ✅ Pero el grafo es fijo, no parametrizado |
+HERO toma de DSPy la **filosofía** (programa declarativo de módulos con signatures y un pipeline explícito), no el framework ni el compiler.
 
-**Posición:** somos un harness con la **estructura de un programa DSPy** (modules + pipeline) pero sin **compiler** (sin teleprompter). Equivalemos a un pipeline DSPy ejecutado en modo eager con prompts fijos.
+### Signatures NL-typed por agente
+- **De DSPy:** cada módulo declara una signature con campos de input/output.
+- **En HERO:** cada agente declara una sección `## Signature` con `role`, `inputs`, `outputs`, `responsibilities` y artefactos `editable (requires_grad)` / `read_only (no_grad)` — ver `agents/reviewer.md`, `agents/implementer.md`, etc. Son signatures en lenguaje natural, no tipado formal.
 
----
+### Módulos + pipeline como grafo declarativo
+- **De DSPy:** los módulos se componen en un pipeline (grafo computacional).
+- **En HERO:** los agentes son los módulos; `PhaseConfig` + `PHASE_REGISTRY` (`src/core/context.py`) declaran para cada fase su `template`, sus `includes` (artefactos de entrada) y su `gate` (salida verificada). `src/harness/prompt_renderer.py` (`render_prompt`) sustituye los includes en el template. El pipeline concreto se compone según el modo (`MISSION_PIPELINES`).
 
-## 4. ¿Podríamos integrar DSPy?
+### Métrica de éxito como gate (no numérica)
+- **De DSPy:** una métrica guía la compilación.
+- **En HERO:** el "score" es el veredicto `APPROVED` del reviewer más los Deterministic Checks (`DC*`), validados por gate (`src/core/gate.py`). Es una señal de éxito explícita, aunque no un score numérico que se optimice automáticamente.
 
-### 4.1 Lo que se traduciría bien
+## 4. No adoptado (y por qué)
 
-- **Reescribir cada agente** (`researcher`, `specifier`, etc.) como `dspy.Module` con signature explícita. Bajo coste técnico (rewrite de prompts a signatures + Module subclasses).
-- **Definir una métrica compuesta**: `APPROVED rate` + `M-HIR` + `entropy delta` + `cost` (los outcomes del paper 03). DSPy puede optimizar contra cualquiera de ellas o combinaciones.
-- **Bootstrap demonstrations**: cuando una misión llega a `autonomous_verified_success`, persistir el `(brief, spec, plan, audit)` como demonstración few-shot para futuras invocaciones del módulo correspondiente.
-- **Teleprompter offline**: una vez tengamos N misiones reales, correr `BootstrapFewShot` o `MIPRO` para optimizar prompts de cada agente.
-
-### 4.2 Lo que NO se traduce limpio
-
-- **HITL fast-path**, **reimplement loop**, **mission/task/burst jerarquía**, **layered hot/cold context**: DSPy no tiene primitivas naturales para esto. Habría que codificarlas como `if/for` en Python alrededor de los módulos DSPy, pero el compiler no las optimiza.
-- **Workspace efímero + artefactos en disco**: DSPy asume pipelines de in-memory string transformations. Tendríamos que serializar/deserializar entre módulos.
-- **Reviewer como módulo recursivo** (audit → reimplement → re-audit): difícil de expresar con el compiler de DSPy, que asume DAG.
-- **Métricas non-pass/fail** sobre código real: DSPy funciona mejor con métricas baratas y deterministas. Nuestras métricas reales (tests reales, reviewer LLM) son caras.
-
-### 4.3 Coste real de migrar
-
-- **Alto.** No es sólo reescribir prompts: es asumir el modelo mental de DSPy, gestionar versionado del compiler, lidiar con sus limitaciones de control flow, y aceptar dependencias.
-- **Beneficio sólo si** corremos el harness sobre N misiones suficientes (≥30) y tenemos métricas baratas que el teleprompter pueda evaluar muchas veces. Hoy no.
-
----
-
-## 5. Análisis Riesgo · Beneficio · Impacto · Novedad
-
-### 5.1 Como aporte al harness
-
-| Idea derivada | Coste | Beneficio | Impacto | Novedad |
-|---------------|-------|-----------|---------|---------|
-| **Migrar agentes a DSPy modules** | Alto | Medio-Alto si llegamos a corpus de misiones para compilar | Medio | Baja (DSPy ya existe) |
-| **Adoptar signatures NL-typed** sin migrar a DSPy | Bajo. Es una práctica de documentación | Medio. Claridad estructural en prompts | Medio | Baja |
-| **Bootstrap demonstrations cross-misión** (idea de teleprompter sin DSPy) | Medio. Es la "mission case base" del paper 02 + selección via métrica | Alto a medio plazo | Alto | Media — combina paper 02 (case base) + paper 06 (selección via teleprompter) |
-| **Métrica formal compuesta** sobre outcomes (paper 03) para guiar optimización futura | Bajo (definición) + Alto (instrumentación) | Alto a largo plazo | Alto | Media |
-| **Teleprompter offline** sobre N misiones para auto-optimizar prompts | Muy alto. Requiere N≥30 misiones, métricas evaluables, infra | Alto si funciona | Alto | Media — es DSPy aplicado a coding agents, no muy explorado todavía |
-
-### 5.2 Como aporte al paper / benchmark
-
-| Uso | Valor |
-|-----|-------|
-| **Citar como prior art** de "harness como programa parametrizable" | Alto. Es la cita obligada para "pipelines de LLM como código declarativo". |
-| **Diferenciarnos** explícitamente | Crítico. DSPy optimiza **prompts**; nosotros optimizamos **orquestación, contexto, HITL**. Son ortogonales. |
-| **Comparar con DSPy como contender** | Potencialmente. Podríamos añadir **C4 = DSPy pipeline** al benchmark. Aumenta el coste de implementación. **Decisión depende de presupuesto.** |
-| **Adoptar terminología** signatures/modules/teleprompters | Medio. Útil pero arriesga confusión con DSPy literal. |
-| **Como SOTA en coding agents** | No. DSPy se ha probado más en QA/math que en SWE-bench-like tasks. No es competidor empírico fuerte aquí. |
-
-### 5.3 Riesgos
-
-- **Tentación de migrar todo a DSPy.** Es muy atractivo "y si todo lo nuestro fuera DSPy modules y compiláramos". Realidad: rewrite enorme, no resuelve los problemas duros del harness (workspace, HITL, contexto), y nos hace dependientes de una librería en evolución rápida.
-- **Confundir prompt optimization con harness optimization.** DSPy optimiza la primera. La segunda es lo nuestro. Mantener la distinción es clave para la narrativa.
-- **DSPy ha cambiado mucho desde 2023.** Esta versión del paper es antigua. El framework actual tiene MIPROv2, COPRO, ensembling, etc. Si lo citamos, conviene citar también la versión reciente del repo y de papers DSPy posteriores.
-
----
-
-## 6. Decisiones recomendadas
-
-### Para el harness
-
-1. **No migrar a DSPy.** El coste excede el beneficio en nuestro régimen actual.
-2. **Adoptar la práctica de signatures explícitas** en los headers de `prompts/*.md` (input/output fields documentados). Cero coste, mejora claridad. **No usar el framework**, sólo la idea.
-3. **Tomar prestada la idea de teleprompter para "mission case base"**: en lugar de simple retrieval por similitud (paper 02), seleccionar demonstrations vía bootstrap guiado por métrica. Esto es la **versión 2.0 de la mission case base**. Anotar para post-MVP.
-4. **Formalizar métrica compuesta** sobre outcomes del paper 03 (`AVSR`, `M-HIR`, `cost`, `entropy_delta`). Útil incluso sin DSPy: define qué optimizar manualmente y qué medir en el benchmark.
-
-### Para el paper
-
-1. **Citar DSPy** como prior art en "pipelines LLM parametrizables y compilables".
-2. **Diferenciarnos** explícitamente: DSPy = prompt optimization; nuestro paper = harness orchestration + workspace + HITL + layered context.
-3. **No añadir DSPy como contender** salvo que el presupuesto permita 4 contenders sólidos. Mantener los 3 actuales (C1 Raw, C2 Loop tonto, C3 Harness) que ya cubren H0/H1/H3 del paper 03.
-4. **Mencionar como future work** la integración harness+DSPy: nuestro harness define la orquestación, DSPy compila los prompts dentro de cada fase. Es el matrimonio natural.
-
----
-
-## 7. Veredicto franco
-
-- **Calidad del paper:** seminal. Bien escrito, programa de research duradero (DSPy se ha convertido en una herramienta estándar). Resultados empíricos sólidos en su dominio (NLP clásico).
-- **Relevancia para nosotros:** **media-baja en ejecución, alta en framing.** DSPy resuelve un problema (prompt optimization) que no es nuestro cuello de botella actual. Nuestro cuello de botella es orquestación, contexto y HITL.
-- **Lo mejor de DSPy para nosotros:** la **filosofía** (prompts como parámetros, no como strings fijos; metricas explícitas; compilación). No la implementación.
-- **Riesgo principal:** migrar prematuramente, perder semanas en rewrite, no resolver los problemas duros del harness, y quedar amarrados a un framework externo en evolución.
-- **Honestamente:** DSPy es un framework excelente para sistemas tipo QA/RAG/clasificación. Para harnesses de coding agents largos, con HITL, workspaces y artefactos persistentes, **no es el modelo mental correcto**. La integración natural (DSPy dentro de cada fase de nuestro harness) es interesante pero estrictamente future work.
-
-**Acción concreta sugerida:**
-1. Adoptar signatures explícitas en `prompts/*.md` como práctica de documentación.
-2. Anotar "teleprompter-style demonstration selection" como evolución v2 de la mission case base del paper 02.
-3. Citar DSPy en related work, no añadirlo como contender.
-4. Formalizar métrica compuesta (AVSR, M-HIR, cost, entropy_delta) para tener algo medible aunque no optimicemos automáticamente.
+- **Teleprompter / compiler (BootstrapFewShot, MIPRO):** no hay optimización automática de prompts. Requeriría un corpus grande de misiones (≥30) y métricas baratas evaluables muchas veces.
+- **Bootstrap de demonstraciones few-shot:** existe retrieval por similitud (case base, paper 02), pero no selección de demostraciones guiada por métrica.
+- **Métrica numérica de optimización:** el éxito es `APPROVED` + DC checks, no un score escalar que un optimizador maximice.
+- **Migrar al framework DSPy:** el coste excede el beneficio; DSPy asume pipelines in-memory tipo QA/RAG y no tiene primitivas naturales para workspace en disco, HITL, reimplement loop ni jerarquía mission/task/burst.

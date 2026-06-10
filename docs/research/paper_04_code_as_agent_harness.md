@@ -68,103 +68,33 @@ Implicación: la frontera "modelo vs. harness" se está volviendo una **superfic
 
 ---
 
-## 3. Mapeo a nuestro harness
+## 3. Qué adoptamos en HERO y cómo está implementado
 
-| Categoría del paper | Nuestro estado |
-|---------------------|----------------|
-| Model-internal capabilities | Sonnet 4.x congelado, no tocamos |
-| System-provided harness infrastructure | Sí: `PHASE_REGISTRY`, agentes, tools por fase, HITL, workspace efímero, layered context |
-| **Agent-initiated code artifacts** | ❌ Mínimo. Nuestro implementer escribe código y tests, pero **no fabrica tools/scripts temporales** para verificar sub-tareas. Tampoco escribe skills reusables que persistan. |
-| Code for reasoning | ⚠️ Parcial — el implementer ejecuta tests pero no usa programas como herramienta de razonamiento intermedio (PAL/PoT) |
-| Code for acting | ✅ Edit/test/run cubierto |
-| Code for environment | ⚠️ `build_code_graph` representa estado parcial. No tenemos modelo de tests fallidos como entorno explícito. |
-| Planning | ✅ Specifier→Planner→Implementer es descomposición lineal con grounding estructural |
-| Memory | ⚠️ Hot/cold per-mission. Sin memoria cross-misión (ya identificado en papers 02 y 03). |
-| Tool use | ✅ Configurable por fase. No tenemos tool search/creation dinámica. |
-| Feedback-driven control | ✅ Reviewer→reimplement loop |
-| Multi-agent scaling | ⚠️ Tenemos roles (specifier/planner/implementer/reviewer) pero sequenced, no concurrentes. Es "streamlined collaboration" en su taxonomía, no "centralized" ni "distributed". |
-| Harness como objeto de optimización | ❌ Nuestro harness es **estático**. No se auto-modifica ni se optimiza. |
+De la taxonomía del survey, HERO se sitúa claramente en el cuadrante **system-provided harness infrastructure**: maximiza la infraestructura del harness y deja al mínimo el *agent-initiated code*.
 
----
+### Harness infrastructure (model-external)
+- **Del survey:** la capacidad emerge del sistema `model × harness × environment`; la infraestructura del harness es donde se invierte.
+- **En HERO:** pipeline declarativo de fases con agentes, herramientas por fase, gates, HITL, workspace efímero y pizarra por capas (`PHASE_REGISTRY` en `src/core/context.py`, `agents/*.md`, `src/mission/`).
 
-## 4. Aplicabilidad — qué tomar del survey
+### Planning como descomposición lineal con grounding estructural
+- **Del survey:** planificación explícita antes de actuar.
+- **En HERO:** `specifier → planner → implementer → reviewer` (`agents/*.md`), con grounding del grafo de código (`src/analysis/`).
 
-### 4.1 Para el **harness** (implementación)
+### Code for acting + feedback-driven control
+- **Del survey:** el código como medio de actuar y el control guiado por feedback de ejecución.
+- **En HERO:** el implementer edita/ejecuta tests (`IMPL_TOOLS` en `src/core/context.py`) y el loop reviewer → reimplement reacciona al `audit.md` (`src/mission/hitl.py`, `src/mission/burst_runner.py`).
 
-| Idea | Coste | Beneficio | Impacto | Novedad |
-|------|-------|-----------|---------|---------|
-| **Agent-initiated code artifacts:** permitir al implementer escribir scripts/tests temporales que ejecuta para verificar hipótesis | Medio. Requiere tool específico + política de cleanup | Medio-Alto. Combate "patching aleatorio" con verificación local | Alto en bugs sutiles | Media |
-| **Code-as-reasoning (PAL/PoT style)** en specifier/planner para cálculos no triviales | Bajo | Bajo en nuestro dominio (code-gen, no math) | Bajo | Baja |
-| **Multi-agent concurrente** (paralelizar specifier de subtareas) | Alto. Cambia el modelo de ejecución | Bajo a corto plazo | Bajo | Media |
-| **Harness self-modification** (Live-SWE-agent style) | Muy alto. Estabilidad/rollback no resueltos en el paper | Incierto | Medio si funciona | Alta (competitiva con AutoHarness etc.) |
-| **Externalizar convenciones de harness como specs editables** (Natural-Language Agent Harnesses) | Bajo — **ya lo hacemos** con `agents/*.md`, `CHECKPOINTS.md`, `CONTEXT.md` | Alto — nos da etiqueta de prior art | Alto a nivel narrativo | Baja en implementación, alta en framing |
+### Natural-Language Agent Harness specs
+- **Del survey:** externalizar las convenciones del harness como specs editables en lenguaje natural.
+- **En HERO:** exactamente eso — los roles viven en `agents/*.md`, los criterios en `CHECKPOINTS.md`, el vocabulario en `GLOSSARY.md` y las skills en `commands/`.
 
-### 4.2 Para el **paper / benchmark**
+### Memory (ahora cross-misión)
+- **Del survey:** memoria como componente del harness.
+- **En HERO:** además de la pizarra `context-hot.md`/`context-cold.md` (per-misión), hay memoria persistente cross-misión: case base (`src/harness/case_base.py`) y project memory (`src/harness/project_memory.py`).
 
-El valor principal del survey para nosotros es **referencial**, no metodológico.
+## 4. No adoptado (y por qué)
 
-| Uso | Valor |
-|-----|-------|
-| **Citar como source-of-truth de related work** | Muy alto. ~400 papers organizados; ahorra meses de literature review. |
-| **Vocabulario tripartita** (model-internal / harness infra / agent-initiated code) | Alto. Encaja con nuestra narrativa: nuestro contender C3 maximiza harness infrastructure y deja agent-initiated code en mínimos; C1 Raw es sólo model-internal. |
-| **Open problems documentados con métricas** | Muy alto. Nos da munición para justificar el paper ("failure attribution está al 14-53%; nosotros proponemos protocolo que mejora esto"). |
-| **El thread "harness como objeto de optimización"** | Crítico. Identifica nuestros **competidores directos**: AutoHarness, Meta-Harness, AHE, NL Agent Harnesses, Live-SWE-agent. Hay que leerlos antes de publicar. |
-| **"Harness as distillation surface"** | Alto. Argumento extra: los datos que produzca un buen harness valen oro para entrenar la siguiente generación de modelos. Eso refuerza el valor de invertir en harness engineering aunque los modelos mejoren. |
-| **Como SOTA competidor** | No aplica. Es survey, no método. |
-
----
-
-## 5. Análisis Riesgo · Beneficio · Impacto · Novedad
-
-### 5.1 Como aporte directo al harness
-
-Modesto. El survey cubre tanto terreno que casi todo lo que dice "se podría hacer" ya está en otros papers individuales más densos. **Tres ideas concretas vale la pena anotar:**
-
-1. **Agent-initiated code artifacts** — dar al implementer (o introducir una fase nueva tipo "scratch") la capacidad de escribir scripts/probes que ejecuta para verificar hipótesis. **Coste medio, beneficio medio-alto en bug-fix.**
-2. **Re-etiquetar nuestros `agents/*.md` como "Natural-Language Agent Harness"** — coste cero, alto valor narrativo.
-3. **Leer los 5 papers del thread "harness as optimization object"** antes de seguir — son competencia directa, no derivar el plan sin verlos.
-
-### 5.2 Como aporte al paper / benchmark
-
-**Muy alto** como infraestructura referencial. Nos ahorra el grueso de la literature review y nos da open problems con métricas para justificar el aporte. La pregunta concreta es: **¿hay overlap peligroso con AutoHarness / Meta-Harness / AHE / Live-SWE-agent?** No podemos contestarla sin leerlos individualmente.
-
-### 5.3 Riesgos
-
-- **Riesgo de "todo ya está hecho":** el survey hace parecer que el espacio está saturado. En realidad cada pieza está aislada y nadie ha hecho el **estudio poblacional bajo H0–H3** (que sí está señalado como gap por Zhong & Zhu 2026 = paper 03). Nuestro nicho aguanta.
-- **Riesgo de competencia con harness-as-optimization-object:** si AutoHarness o Meta-Harness ya muestran resultados empíricos comparables, nuestro paper queda en segunda fila. Hay que verificar.
-- **Riesgo de quedarse derivativos:** este survey + paper 03 + paper 01 ya cubren mucho del marco. Para no parecer reseña, tenemos que **medir cosas nuevas** (estudio poblacional, jerarquía mission/task/burst, HITL fast-path).
-
----
-
-## 6. Decisiones recomendadas
-
-### Para el harness
-
-1. **No** intentar auto-modificación del harness (Live-SWE-agent style). Demasiado coste, estabilidad no resuelta.
-2. **Considerar** una fase opcional "scratch" donde el implementer puede generar scripts de verificación local antes de commit. Pequeña extensión natural del IMPLEMENT_BURSTS.
-3. **Renombrar** o documentar nuestros `agents/*.md` como "natural-language agent harness specs". Bajo coste, da prior art.
-
-### Para el paper
-
-1. **Usar el survey como columna vertebral de la related work** — citarlo extensamente y construir nuestra sección de fundamentos sobre su taxonomía.
-2. **Adoptar la distinción tripartita** (model-internal / harness infra / agent-initiated code) para describir qué hacen C1, C2, C3.
-3. **Citar las cifras de open problems** (14-53% failure attribution, 16.9% LingmaAgent autonomy, organicity gap) para justificar el aporte empírico.
-4. **Leer urgentemente** los siguientes papers antes de finalizar el research_plan:
-   - AutoHarness
-   - Meta-Harness
-   - Agentic Harness Engineering (AHE)
-   - Live-SWE-agent
-   - Natural-Language Agent Harnesses
-   
-   Estos 5 son competencia directa; el research plan no debe cerrarse sin haberlos evaluado.
-
----
-
-## 7. Veredicto franco
-
-- **Como survey:** masivo, bien organizado, cita exhaustivamente. Útil como mapa.
-- **Como contribución conceptual:** la distinción **agent-initiated code artifacts** vs. **system-provided infrastructure** es la idea propia del paper y es buena. El resto es síntesis.
-- **Para nosotros:** **alto valor referencial, bajo valor metodológico.** No cambia el plan; sí cambia la literatura que tenemos que conocer.
-- **Alerta principal:** el thread "harness as optimization object" tiene ~5 papers activos y nadie los ha leído todavía aquí. Si alguno de ellos hace estudio empírico sobre múltiples tareas con ablation, nuestro nicho se reduce. **Verificar antes de seguir invirtiendo en el plan actual.**
-
-**Acción concreta sugerida:** mantener este paper como referencia maestra de la related work; priorizar lectura de **AutoHarness** y **Meta-Harness** en próximas iteraciones para descartar overlap.
+- **Agent-initiated code artifacts (scripts/probes temporales):** el implementer escribe código y tests, pero no fabrica herramientas/scripts efímeros para verificar sub-hipótesis. Requeriría un tool de "scratch" con política de limpieza.
+- **Code-as-reasoning (PAL/PoT):** poco relevante en un dominio de code-gen (no de cálculo matemático).
+- **Multi-agente concurrente:** los roles están secuenciados ("streamlined collaboration" en la taxonomía del survey), no ejecutados en paralelo.
+- **Harness auto-modificable (Live-SWE-agent style):** el harness es estático; no se auto-optimiza. La estabilidad/rollback de la auto-modificación no es un problema resuelto.

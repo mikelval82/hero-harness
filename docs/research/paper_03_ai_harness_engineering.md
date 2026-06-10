@@ -82,110 +82,41 @@ Métrica más relevante para nosotros: **M-HIR (Missing-Harness Human Interventi
 
 ---
 
-## 3. Mapeo a nuestro harness (1-a-1)
+## 3. Qué adoptamos en HERO y cómo está implementado
 
-| 11 componentes del paper | Nuestro harness | Estado |
-|--------------------------|-----------------|--------|
-| Task interface | `brief.md` (griller) + `spec.md` (specifier) | ✅ Sólido |
-| Context manager | `build_code_graph`, `context-hot.md`, `context-cold.md` | ✅ Sólido |
-| Tool registry | tools por fase en `PHASE_REGISTRY` (DEFAULT/IMPL/REVIEW) | ✅ |
-| Project memory | `~/.claude/AGENTS.md`, `CONTEXT.md`, `CHECKPOINTS.md`, `commands/` | ⚠️ Existe pero **per-installation**, no per-proyecto. No tenemos AGENT_GUIDE / ARCHITECTURE / KNOWN_FAILURES por proyecto target. |
-| Task state | `status.md` | ✅ |
-| Observability | logs en `$CLAUDE_HARNESS` | ⚠️ Existen, pero **no estructurados como traces JSONL**. |
-| Failure attribution | `audit.md` del reviewer | ⚠️ Es NL, no clasificado por taxonomía de 8 tipos. |
-| Verification protocol | reviewer + reimplement loop | ⚠️ Sin **deterministic check registry** explícito. No mapeamos requisitos del spec a checks individuales. |
-| Permission boundary | HITL (Telegram/stdin), gates por modo | ✅ |
-| Entropy auditor | — | ❌ No existe. Nadie audita residuos, dependency churn, tests debilitados. |
-| Intervention logger | HITL deja rastro pero no clasificado | ❌ No marcamos "avoidable / not-avoidable" ni mapeamos a componente faltante. |
+Este es el paper de referencia: su taxonomía de 11 componentes de un harness está implementada casi al completo en HERO.
 
-**Posición en la escalera H0–H3:** somos aproximadamente **H2.7**. Tenemos casi todo H2 + reviewer (que es H3 parcial) pero falta el corazón de H3: deterministic checks ligados a requisitos, bug-reproduction protocol explícito, structured verification report, entropy audit, intervention classification.
+| Componente del paper | Implementación en HERO | Fichero(s) |
+|----------------------|------------------------|------------|
+| Task interface | `brief.md` (griller) + `spec.md` (specifier) con criterios EARS | `agents/griller.md`, `agents/specifier.md` |
+| Context manager | grafo de código (tree-sitter) + pizarra `context-hot.md` / `context-cold.md` | `src/analysis/`, `src/mission/burst_runner.py` |
+| Tool registry | herramientas acotadas por fase (`DEFAULT`/`IMPL`/`REVIEW`) | `src/core/context.py` |
+| Project memory | `PROJECT_MEMORY.md` **por proyecto** en `~/.harness-memory/{project_key}/` | `src/harness/project_memory.py` |
+| Task state | `status.md` con marcador `STATUS:` validado por gate | `src/core/gate.py` |
+| Observability | trazas JSONL estructuradas (`_telemetry.jsonl`) con coste/turnos/tokens | `src/harness/telemetry.py` |
+| Failure attribution | `audit.md` con `failure_type` + `recoverability_lost_at_stage` | `src/core/gate.py`, `agents/reviewer.md` |
+| Verification protocol | Deterministic Check Registry (`DC*`) en spec, ejecutado por el reviewer | `src/core/gate.py` |
+| Permission boundary | HITL (aprobación humana) + gates por modo | `src/mission/hitl.py` |
+| Intervention logger | `write_intervention` clasifica cada decisión HITL | `src/harness/telemetry.py`, `src/mission/hitl.py` |
 
----
+### Deterministic check registry (corazón de H3)
+- **Del paper:** convertir el "approved" subjetivo en evidencia, mapeando requisitos a checks ejecutables.
+- **En HERO:** el `specifier` declara un `## Deterministic Check Registry` con checks `DC*` ligados a requisitos (`requirement:`, `type:`, `expected:`); el `reviewer` reporta `checks_executed / failed_checks / not_run_checks` en `audit.md`. Validado por el gate (`src/core/gate.py`).
 
-## 4. Aplicabilidad — desglose por bloques
+### Verification report estructurado
+- **Del paper:** informe de verificación con atribución de fallo.
+- **En HERO:** `audit.md` incluye secciones obligatorias `### Evidence Anchoring` (claims soportados vs `unsupported_claims`), `### Gradient Findings` (gradientes textuales), `### Evaluation Hacking Check`, y `failure_type` taxonomizado — todas validadas por gate.
 
-### 4.1 Para el **harness** (implementación)
+### Trazas e intervention logger
+- **Del paper:** observabilidad como trazas estructuradas y registro clasificado de intervenciones humanas.
+- **En HERO:** `src/harness/telemetry.py` escribe `_telemetry.jsonl` (`write_phase_event`, `write_intervention`, `estimate_cost_usd`); el refiner (`src/harness/refiner.py`) consume esas trazas para detectar fallos recurrentes.
 
-| Mejora derivada del paper | Coste | Beneficio | Impacto | Novedad |
-|---------------------------|-------|-----------|---------|---------|
-| **Trazas JSONL estructuradas** (8 tipos) en lugar de logs sueltos | Medio | Alto. Habilita métricas reproducibles, debug, paper | Alto | Baja (es ingeniería) |
-| **Deterministic check registry** que mapea requisitos del `spec.md` a checks ejecutables, leído por reviewer | Medio-Alto | Muy alto. Convierte "approved" subjetivo en evidencial | Muy alto | Media |
-| **Project memory por target-project** (AGENT_GUIDE, ARCHITECTURE, KNOWN_FAILURES) dentro del repo target, no en `~/.claude/` | Bajo | Alto si el usuario lo mantiene; el harness puede ayudar a generarlo en la primera misión | Alto a largo plazo | Baja (es práctica de la industria) |
-| **Intervention logger clasificado** (mapea cada HITL a "qué componente del harness habría evitado esto") | Bajo | Alto. Convierte HITL en señal diagnóstica para mejorar el propio harness | Alto | Alta |
-| **Entropy auditor** (post-pass sobre el diff: docs obsoletas, residuos, tests debilitados, dependency churn) | Medio | Medio. Importante en proyectos serios | Medio | Media |
-| **Bug-reproduction protocol explícito** antes de editar en tareas de bug-fix | Bajo | Alto en bug-fix; combate "patching aleatorio". Es exactamente el `R-CG1 diagnosis gate` de paper 01 reformulado | Alto | Baja |
-| **Failure attribution clasificado** (`audit.md` con campo `failure_type ∈ {Fcontext, Ftool, ...}`) | Bajo | Alto. Convierte audit NL en dato estructurado | Alto | Media |
-| **Episode package** como deliverable final por misión | Medio | Alto para el paper (es la unidad de evaluación) | Alto para el paper, medio para la herramienta | Baja |
+### Extensiones propias sobre el framework del paper
+- **Jerarquía mission > task > burst:** `src/mission/burst_runner.py` (el paper no cubre bursts).
+- **Routing de modelo por fase:** `src/core/model_policy.py` (CHEAP/DEFAULT/DEEP).
+- **HITL como fast-path a REIMPLEMENT:** `src/mission/hitl.py`.
 
-### 4.2 Para el **paper / benchmark** (esto es lo importante)
+## 4. No adoptado (y por qué)
 
-Este paper nos da **toda la infraestructura conceptual** del benchmark prácticamente gratis.
-
-| Pieza del paper | Cómo la usamos en nuestro benchmark |
-|-----------------|--------------------------------------|
-| Ecuación $C_{sys}=F(C_{model}, C_{harness}, C_{env}, T)$ | Justifica formalmente nuestra tesis: **mismo modelo, distinto harness, distinto outcome**. |
-| Escalera H0–H3 | **C1 Raw ≈ H0, C2 Loop tonto ≈ H1, C3 Harness ≈ H2/H3**. Nuestro benchmark se convierte en una validación empírica poblacional de la escalera del paper (que ellos sólo ilustran con 1 tarea). |
-| 5 outcomes | Reemplaza el binario pass/fail en H1 "correctness" del research_plan. |
-| 8 trazas + episode package | Es exactamente la unidad de análisis que necesitamos. |
-| M-HIR | Métrica de calidad del harness perfecta para nuestra hipótesis H2 (calidad estructural). |
-| Taxonomía de 8 fallos | Permite **análisis por causa** en lugar de sólo "C1 falla más" — narrativa mucho más fuerte. |
-| 11 componentes + 5 principios | Vocabulario que estructura la sección de related work y la descripción del C3. |
-
-### 4.3 Riesgo de derivar demasiado
-
-- Si abrazamos su framework entero, nuestro paper se lee como "validación empírica de Zhong & Zhu 2026". Eso puede ser **bueno** (cuento limpio, contribución clara) o **malo** (parece derivativo).
-- **Mitigación:** posicionarnos como complementarios. Ellos: framework + 1 tarea ilustrativa, sin estudio poblacional. Nosotros: estudio poblacional sobre N tareas reales con 3 contenders, midiendo justo lo que su framework predice. **"Their framework, our evidence."**
-- También podemos **extender** el framework: ellos no cubren `mission > task > burst` (jerarquía), ni HITL como fast-path REIMPLEMENT, ni hot/cold context. Esas son contribuciones diferenciadas nuestras.
-
----
-
-## 5. Análisis Riesgo · Beneficio · Impacto · Novedad — resumen
-
-### Como aporte al **harness**
-
-1. **Trazas JSONL + deterministic check registry + entropy auditor** — paquete coherente, coste medio, beneficio alto, defendible empíricamente.
-2. **Intervention logger clasificado + failure attribution clasificada** — coste bajo, beneficio alto. Casi gratis y abre puerta a métricas serias.
-3. **Project memory por target-project** — coste bajo, valor alto.
-
-### Como aporte al **paper**
-
-**Crítico.** Es la cita más importante de toda la colección. Da:
-- vocabulario,
-- formalización,
-- protocol de evaluación,
-- métrica diferenciadora (M-HIR),
-- una escalera natural para mapear nuestros 3 contenders.
-
----
-
-## 6. Decisiones recomendadas
-
-### Para el **harness** (orden de implementación)
-
-1. **Failure attribution clasificada** en el reviewer (`audit.md` con campo `failure_type`) — coste mínimo, beneficio inmediato.
-2. **Intervention logger** con clasificación `{avoidable_by_harness: yes/no, missing_component: <which>}` — coste bajo, datos directos para mejorar.
-3. **Trazas JSONL estructuradas** (action, tool, context, verification, intervention, entropy, outcome). Refactor que vale la pena porque desbloquea todo lo demás.
-4. **Deterministic check registry** ligado al `spec.md` — el `specifier` produce una lista de checks ejecutables; el `reviewer` los ejecuta. Es la versión madura del "verification gate".
-5. **Entropy auditor** como fase opcional post-IMPLEMENT — diff diff, busca residuos, docs obsoletas, tests debilitados.
-6. **Project memory por target-project** — más cultural que técnico; documentar la práctica.
-
-### Para el **paper**
-
-- **Adoptar explícitamente** el framework H0–H3 como eje del experimento principal. Reescribir las hipótesis H1–H5 del `research_plan` en su vocabulario.
-- **Adoptar** los 5 outcomes y la taxonomía de 8 fallos como dimensiones de análisis.
-- **Citar a Zhong & Zhu 2026** como base teórica y posicionarnos como "primer estudio poblacional bajo este framework".
-- **Diferenciarnos** explícitamente: ellos ilustran con 1 tarea controlada; nosotros aportamos evidencia poblacional + extensión del framework con jerarquía mission/task/burst + HITL fast-path.
-
----
-
-## 7. Veredicto franco
-
-- **Calidad del paper:** sólida. Está bien escrito, define cosas con precisión, distingue su propuesta de prompts, agent frameworks, ACIs y agent OSes. La debilidad obvia: una sola tarea de ilustración. Los propios autores lo reconocen explícitamente — no pretende ser estudio empírico.
-- **Nivel de novedad real:** medio-alto. La industria (OpenAI Codex, Microsoft) ya converge informalmente en estas ideas; el aporte de Zhong & Zhu es **nombrarlas y darles estructura empírica ablativa**. Eso es lo que precisamente faltaba.
-- **Para nosotros:** este paper transforma el problema. En lugar de "diseñar un benchmark desde cero", ahora tenemos un framework establecido que **podemos llenar con datos**. La pregunta de research del paper propio se vuelve más nítida: *"¿Hasta qué punto el efecto harness predicho por H0→H3 se confirma empíricamente sobre N tareas reales con un solo modelo?"*
-- **Riesgo principal:** parecer derivativos. Mitigación: enmarcar como validación + extensión, no como propuesta de framework competidor.
-
-**Acción concreta sugerida:**
-1. Re-escribir el `research_plan/research_plan.md` integrando la escalera H0–H3 como eje principal.
-2. Implementar primero **failure attribution clasificada** e **intervention logger** porque son baratos y necesarios para el benchmark.
-3. Citar Zhong & Zhu 2026 en la sección de fundamentos del paper y posicionarnos como complemento empírico, no como competencia.
+- **Entropy auditor dedicado:** no hay un pase específico que audite residuos, *dependency churn* o tests debilitados sobre el diff. Parte de su intención se cubre vía `Evidence Anchoring` y `Evaluation Hacking Check`, pero no como componente independiente.
+- **Episode package como deliverable formal:** la información existe distribuida (telemetría + fase `report`), pero no se empaqueta como "episode package" unitario tal y como lo define el paper.

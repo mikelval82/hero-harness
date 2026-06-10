@@ -161,200 +161,35 @@ Hallazgos principales:
 
 ---
 
-## 4. Mapeo a nuestro harness
+## 4. Qué adoptamos en HERO y cómo está implementado
 
-| Voyager | Nuestro harness | Diagnostico |
-|---------|-----------------|-------------|
-| Automatic curriculum | `structurer`, `planner`, `tasks.json` | Tenemos descomposicion, pero no curriculum adaptativo vivo |
-| Completed/failed task memory | `status.md`, `audit.md`, context hot/cold | Existe, pero no se usa para proponer subtareas nuevas |
-| Skill library | `commands/`, skills de Codex, futura case base | Tenemos skills estaticas; no generamos skills automaticamente tras exito |
-| Code skills | Scripts/tests/helpers que el agente podria crear | Aun no hay politica clara para agent-initiated reusable tools |
-| Skill retrieval | `context-cold.md`, code graph, rg | Retrieval semantico de casos/skills no existe |
-| Iterative prompting | reviewer -> reimplement loop | Existe, pero a nivel tarea; Voyager lo hace a nivel micro-skill |
-| Self-verification | `reviewer` | Reviewer es fuerte pero tardio; falta critic local por subtask |
-| Environment feedback | test output, tool output, runtime errors, git diff | Tenemos feedback, pero no siempre estructurado como progreso parcial |
-| Max 4 rounds then move on | retries / HITL | No tenemos una regla formal de abandono temporal y reintento posterior |
-| Warm-up schedule | divulgacion progresiva | Lo aplicamos a docs, no a estado/artefactos de mision |
+Voyager propone acumular habilidades verificadas y recuperarlas en tareas futuras. HERO implementa la skill library y el retrieval, manteniendo el sistema acotado al objetivo del usuario.
 
-**Posicion:** Voyager es un blueprint para convertir nuestro harness de "pipeline que resuelve tareas" a "sistema que acumula habilidades". Pero no debe copiarse literalmente: nuestro dominio no es open-ended Minecraft, sino engineering tasks con user intent, repo constraints y review humano.
+### Skill library post-misión (solo skills verificadas)
+- **Del paper:** guardar una skill solo cuando se verificó en entorno real; las skills son código reutilizable.
+- **En HERO:** `src/harness/skill_library.py` persiste skills generadas (directorio de generated-skills) con estado `verified` y las expone al implementer vía `retrieved-skills.md`. Solo entran patrones que pasaron review/tests.
 
----
+### Retrieval top-k de skills y casos
+- **Del paper:** recuperar las skills relevantes antes de actuar.
+- **En HERO:** el retrieval usa solapamiento de tokens TF-IDF (no embeddings) en `src/harness/skill_library.py` para skills y `src/harness/case_base.py` para misiones aprobadas (`retrieved-cases.md`, `mission-cases.jsonl`).
 
-## 5. Aplicabilidad — Harness
+### Self-verification antes del reviewer final
+- **Del paper:** la self-verification es el feedback type más importante (ablation −73%).
+- **En HERO:** el implementer ejecuta `## Self-Verification` con sub-checks locales antes de cerrar (`agents/implementer.md`, validado por gate en `src/core/gate.py`), reduciendo basura antes del reviewer.
 
-| Idea Voyager | Coste | Beneficio | Impacto | Novedad |
-|--------------|-------|-----------|---------|---------|
-| **Skill library post-mision**: guardar patrones/commands/scripts de misiones aprobadas | Medio | Alto | Alto | Media |
-| **Retrieval top-k de skills/casos** antes de implementar | Medio | Alto si hay corpus | Alto | Media |
-| **Self-verification local por subtask** antes del reviewer final | Bajo-medio | Alto | Alto | Baja |
-| **Regla "4 intentos y aparcar"** para subtareas bloqueadas | Bajo | Medio | Medio | Baja |
-| **Completed/failed task memory** en `tasks.json` | Bajo | Medio | Medio | Baja |
-| **Warm-up de contexto** segun progreso de tarea | Medio | Medio | Medio | Media |
-| **Automatic curriculum para misiones grandes** | Medio-alto | Medio | Medio | Media |
-| **Generacion automatica de commands/skills** | Alto | Alto a largo plazo | Alto | Alta |
+### Memoria de completadas/fallidas y modos de fallo
+- **Del paper:** memoria de tareas completadas/fallidas que informa el progreso.
+- **En HERO:** `status.md` marca STATUS (DONE/BLOCKED) validado por gate (`src/core/gate.py`); la memoria de proyecto registra "Recurring Failure Modes" (`PROJECT_MEMORY.md` vía `src/harness/project_memory.py`).
 
-### 5.1 Skill library como siguiente evolucion natural
+## 5. No adoptado (y por qué)
 
-La leccion mas transferible es:
-
-> Solo guardes una skill cuando fue verificada en entorno real.
-
-Para nuestro harness, eso significa:
-
-- no guardar "ideas";
-- no guardar prompts bonitos;
-- guardar rutinas que pasaron tests/review en una mision real.
-
-Ejemplos de skills que podria aprender el harness:
-
-- "como anadir un phase al runner sin romper tests";
-- "como escribir un reviewer que no edita codigo";
-- "como crear un command nuevo siguiendo formato";
-- "como testear path policy en Windows";
-- "como extender `MissionRunner` sin tocar artefactos del proyecto target".
-
-Cada skill deberia tener:
-
-```text
-Description:
-When to use:
-Preconditions:
-Files touched:
-Commands/tests used:
-Failure modes:
-Verified by:
-```
-
-### 5.2 Self-verification antes del reviewer final
-
-Voyager demuestra que self-verification no es un detalle: es el feedback type mas importante. En nuestro harness, el reviewer final es caro y tardio. Podriamos anadir checks locales por subtask:
-
-- "la feature compila";
-- "el test nuevo falla antes y pasa despues";
-- "no se escribieron artefactos del harness en proyecto target";
-- "el cambio respeta zero footprint";
-- "la tarea del plan realmente quedo hecha".
-
-Esto no sustituye al reviewer. Reduce basura antes de llegar al reviewer.
-
-### 5.3 Automatic curriculum sin caer en scope creep
-
-No necesitamos open-ended exploration para tareas de usuario. Pero si puede servir en:
-
-- misiones grandes;
-- benchmark generation;
-- discovery de refactors;
-- backlog interno de mejora del harness.
-
-La version segura seria: **curriculum bounded**, no open-ended. El usuario fija objetivo y constraints; el curriculum solo propone la siguiente subtarea alcanzable dentro de ese objetivo.
-
-### 5.4 Donde NO copiar Voyager
-
-- No dejar que el harness invente objetivos de producto sin usuario.
-- No guardar skills sin verificacion fuerte.
-- No usar LLM self-verification como unico gate.
-- No meter vector DB antes de tener corpus suficiente.
-- No asumir que Minecraft transfer = software engineering transfer.
-- No usar "open-ended" como excusa para scope creep.
+- **Automatic curriculum adaptativo / open-ended:** el `structurer`/`planner` descomponen la misión, pero no existe un curriculum vivo que invente subtareas; HERO es opt-in y acotado al objetivo del usuario (sin scope creep).
+- **Regla formal "4 intentos y aparcar":** hay reintentos y HITL, pero no una regla de abandono temporal con re-priorización automática.
+- **Vector DB para retrieval:** se usa similitud por tokens TF-IDF deliberadamente; no se introduce base vectorial hasta tener corpus suficiente.
 
 ---
 
-## 6. Aplicabilidad — Paper / benchmark
-
-| Uso | Valor |
-|-----|-------|
-| **Related work** | Alto. Es referencia clave de lifelong LLM agents con skill library ejecutable. |
-| **Soporte para "skills as reusable code"** | Muy alto. Encaja con paper 04 y nuestra posible case base. |
-| **Baseline directo** | Bajo. Dominio embodied/open-ended, no SWE benchmark. |
-| **Inspiracion para benchmark secundario** | Medio. Podriamos medir aprendizaje cross-task por reuse de skills. |
-| **Cita para self-verification** | Alto. Ablation `-73%` es municion fuerte. |
-| **Cita para automatic curriculum** | Alto en framing; cuidado con dominio. |
-
-### Implicacion para contenders
-
-Voyager no deberia entrar como contender en nuestro MVP. Es otro regimen:
-
-- entorno open-ended;
-- tareas generadas por el agente;
-- skill accumulation;
-- Mineflayer APIs;
-- feedback textual del mundo.
-
-Pero si sugiere un **experimento post-MVP**:
-
-1. Correr varias tareas relacionadas con el harness.
-2. Guardar skills verificadas tras cada tarea.
-3. Medir si el contender con skill retrieval resuelve tareas posteriores con menos tokens/retries.
-
-Ese experimento testaria algo distinto a H1-H5: **lifelong harness learning**.
-
----
-
-## 7. Riesgo / beneficio / impacto / novedad
-
-### 7.1 Como aporte al harness
-
-El mayor valor practico es la skill library. Nuestro `context-cold.md` comprime hallazgos, pero no convierte esos hallazgos en programas/skills invocables. Voyager muestra que la diferencia entre "memoria" y "habilidad" importa: memoria describe; skill ejecuta.
-
-La segunda idea mas fuerte es el curriculum adaptativo. En misiones grandes, el plan inicial puede quedar obsoleto tras nuevos hallazgos. Voyager propone una regla sana: elegir la proxima tarea segun estado actual, completadas/fallidas y frontera de capacidad.
-
-### 7.2 Como aporte al paper
-
-Voyager no compite con nuestro harness, pero refuerza una tesis transversal: los agentes fuertes no son solo prompts largos; son sistemas con **memory, reusable tools, curriculum, verification y execution feedback**. Es un paper excelente para la seccion de related work sobre skill accumulation y code-as-action.
-
-### 7.3 Riesgos
-
-- **Skill bloat:** una libreria de skills sin curacion se degrada rapido.
-- **Retrieval poisoning:** recuperar una skill parecida pero equivocada puede inducir errores sutiles.
-- **Verifier drift:** self-verification puede aprobar falsos positivos.
-- **Autonomy creep:** automatic curriculum puede inventar trabajo fuera del objetivo del usuario.
-- **Coste:** skill generation + verification + retrieval añade overhead.
-- **Portabilidad:** skills de Minecraft son funciones limpias; skills de software engineering dependen de repos, convenciones y contexto.
-
----
-
-## 8. Decisiones recomendadas
-
-### Para el harness
-
-1. **Diseñar una skill library post-mision**, no runtime al principio. Guardar solo patterns verificados por tests/reviewer.
-2. **Crear formato de skill verificable**: description, preconditions, files, commands, failure modes, verification.
-3. **Anadir self-verification local** antes del reviewer final: checklist por task/subtask.
-4. **Formalizar completed/failed tasks** dentro de `tasks.json` o `status.md`, con razon de fallo.
-5. **Usar curriculum bounded** para misiones grandes: proxima subtarea segun estado real, no segun plan inicial congelado.
-6. **No construir vector DB todavia**. Primero acumular 20-30 skills/casos; luego evaluar retrieval.
-7. **Adoptar regla de abandono temporal**: si una subtarea falla N veces, aparcarla, desbloquear prerequisitos y volver despues.
-
-### Para el paper
-
-1. **Citar Voyager** en related work de lifelong/open-ended agents y skill libraries.
-2. **Usarlo para justificar skill accumulation** como future work o experimento post-MVP.
-3. **No incluirlo como contender** en el benchmark principal.
-4. **Citar ablations clave**: self-verification `-73%`, random curriculum `-93%`, GPT-4 vs GPT-3.5 `5.7x`.
-5. **Diferenciar claramente:** Voyager = embodied lifelong learning; nuestro paper = metodologia de orquestacion para software engineering bajo tareas dadas por usuario.
-
----
-
-## 9. Veredicto franco
-
-Voyager es un paper **excelente** y muy bien diseñado. No por "Minecraft", sino porque une tres cosas que muchos agentes tratan por separado:
-
-1. decidir que aprender despues;
-2. verificar si realmente se aprendio;
-3. guardar lo aprendido como codigo reutilizable.
-
-Para nuestro trabajo, su mensaje central es incomodo y util: un harness que solo compacta contexto no aprende skills. Aprende cuando convierte ejecuciones exitosas en unidades reutilizables, verificadas y recuperables.
-
-**Accion concreta sugerida:**
-
-1. Anotar `skill library post-mision` como feature post-MVP.
-2. Reforzar `reviewer` / `implementer` con self-verification local por subtask.
-3. Anadir al paper un eje futuro: "cross-task skill reuse".
-4. No distraerse con open-ended autonomy todavia. Nuestro producto debe seguir siendo opt-in y user-bounded.
-
----
-
-## 10. Sintesis con papers previos
+## 6. Sintesis con papers previos
 
 - **Paper 04 (Code as Agent Harness):** Voyager es ejemplo fuerte de agent-initiated code artifacts: las skills son codigo ejecutable que el agente crea para si mismo.
 - **Paper 05 (Continual Harness):** ambos tratan lifelong learning; Voyager acumula skills, Continual Harness edita el harness. Son complementarios.

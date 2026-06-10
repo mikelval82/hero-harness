@@ -47,87 +47,31 @@
 
 ---
 
-## Mapeo a nuestro harness
+## Qué adoptamos en HERO y cómo está implementado
 
-| Concepto del paper | Nuestro estado | Diagnóstico |
-|---|---|---|
-| **κ — granularidad** | Tres tamaños fijos: S=[IMPLEMENT], M=[SPEC,PLAN,IMPLEMENT,REVIEW], L=[..., bursts] | **Granularidad por complejidad de tarea, NO por capacidad del modelo**. P1 dice que esto está mal: la granularidad correcta depende del agente, no solo de la tarea |
-| **λ — fuerza del guidance** | Implícita; nuestros prompts son densos y prescriptivos | **Riesgo alto P2**: si ψ favorece "follow the spec" sin chequear evidencia → amplifica alucinación |
-| **ψ — regla guidance** | `agents/*.md` contiene reglas duras, checks de outcome, formato | Mezcla evidence-based (CHECKPOINTS) y instruction-compliance (formato, fases) — **mezcla puede ser óptima** |
-| **Partial harnessing** | Modo `explore` se aproxima (sin spec/plan); modo `full` es full harness | **Ya practicamos parcialmente**, pero sin formalizarlo. P3 nos da fundamento teórico |
-| **Recoverability tubes** | HITL como rescate; reviewer como gate | Nuestro HITL **es** un mecanismo de recovery cuando un prefix se vuelve no-recoverable |
-| **Stagewise product de probs** | M-HIR (paper 03) mide proxy de stage failures | Compatible con framework |
+Este paper formaliza la composición del harness como `(κ, λ, ψ)` (granularidad, fuerza y regla de guidance). HERO materializa varias de sus piezas.
 
----
+### Partial harnessing como modos de misión (κ variable)
+- **Del paper:** la estructura óptima no es "siempre más"; conviene un harness parcial (scaffold inicial + agente libre después).
+- **En HERO:** los modos de misión **son** puntos en el espacio de granularidad: `--mode` admite `full`, `focused`, `spec`, `spec-plan`, `explore`, `hotfix` (`src/cli.py`), cada uno con su pipeline en `MISSION_PIPELINES` (`src/core/context.py`). `is_partial_harness_mode()` (`src/mission/task_executor.py`) distingue los modos parciales.
 
-## Aplicabilidad
+### ψ evidence-anchored vs instruction-compliance (riesgo P2)
+- **Del paper:** un guidance que premia "seguir la instrucción" sin anclar en evidencia amplifica la alucinación.
+- **En HERO:** el `reviewer` separa explícitamente ambos planos en `### Evidence Anchoring` (`status_claims_checked`, `unsupported_claims`, `evidence_quality`, `instruction_compliance_risk`), validado por gate (`src/core/gate.py`). El implementer debe aportar evidencia en `## Self-Verification`.
 
-### Para el harness
+### Recoverability y atribución de etapa
+- **Del paper:** *recoverability tubes*: un prefijo puede volverse no-recuperable en una etapa concreta.
+- **En HERO:** el `audit.md` incluye `recoverability_lost_at_stage` y `failure_type` en la taxonomía de fallo del reviewer (`src/core/gate.py`); el HITL actúa como mecanismo de recovery (`src/mission/hitl.py`).
 
-| Acción | Coste | Beneficio | Impacto | Novedad |
-|---|---|---|---|---|
-| **Adoptar formalmente "Partial Harnessing"** como modo: spec inicial + agente libre tras checkpoint N | Medio (nuevo modo en `MISSION_PIPELINES`) | **Alto** — evidencia empírica de superioridad en TerminalBench | Alto | Alta (Mayo 2026, idea fresca) |
-| **Capability-aware granularity** — elegir S/M/L según modelo, no solo complejidad de tarea | Bajo (parametrizar `TASK_PIPELINES` por modelo) | Medio — P1 lo predice, paper 05 ya lo confirmó | Medio-alto | Media |
-| **Auditar ψ de cada agent prompt**: ¿premia evidence-checking o instruction-compliance? | Bajo (revisión textual de `agents/*.md`) | **Alto** — P2 dice que mezcla mal-calibrada genera alucinación | Alto | Media |
-| Marginal stopping rule en HITL: detectar cuándo agregar más checkpoints empeora | Alto (instrumentación) | Medio | Medio | Alta |
-| Métrica **retention gap** Γ aproximada — comparar tasa-de-éxito-de-stage con vs. sin guidance específico | Alto | Medio | Alto en research, bajo en práctica | Alta |
+### Granularidad por complejidad + routing por fase (λ implícita)
+- **Del paper:** κ (granularidad) y λ (fuerza del guidance) modulan el resultado.
+- **En HERO:** la granularidad del pipeline depende de la complejidad de la tarea, y el modelo se enruta por fase (CHEAP/DEFAULT/DEEP en `src/core/model_policy.py`).
 
-### Para el paper
+## No adoptado (y por qué)
 
-| Uso | Coste | Beneficio | Impacto | Novedad |
-|---|---|---|---|---|
-| **Cita teórica obligatoria** — provee fundamento formal para "más estructura no es mejor" | Trivial | **Crítico** | Alto | Alta |
-| Adoptar nomenclatura (κ, λ, ψ) en sección de framework | Bajo | Alto — vocabulario aceptable por reviewers teóricos | Alto | Media |
-| Reframe de nuestros 5 modos (full/focused/plan/explore/hotfix) como **puntos en el espacio (κ, m)** | Medio | Alto — narrativa coherente | Alto | Alta |
-| Incluir Partial Harnessing como **contender** en benchmark (modo "spec-only-then-release") | Medio | Alto | Alto | Alta |
-| Reportar nuestros outcomes en términos de stage-wise recoverability vs. final success | Alto | Medio | Medio | Media |
-
----
-
-## Decisiones recomendadas
-
-### Harness (acciones priorizadas)
-
-1. **HOY — Auditoría ψ**: revisar cada `agents/*.md` y clasificar reglas en **evidence-anchored** vs. **instruction-compliance**. Si predominan las segundas en un agente que se ve "alucinar", reducir λ (acortar el prompt) o reescribir reglas para anclar en evidencia. Coste 1h, riesgo evitado alto.
-
-2. **Pre-benchmark — Modo Partial Harness**: añadir un quinto modo de misión donde solo se ejecutan SPEC + primer PLAN/IMPLEMENT, y el resto se delega al agente sin más estructura. **Es un experimento barato** sobre la arquitectura existente y prueba directamente la tesis P3.
-
-3. **Mid-term — Capability-aware S/M/L**: parametrizar `TASK_PIPELINES` para que la elección S vs. M vs. L dependa también del modelo activo (Sonnet vs. Haiku). Junta P1 + paper 05 (capability-dependence).
-
-4. **Investigar — Retention gap aproximado**: medir, sobre tareas REJECTED, cuál phase introdujo la trayectoria no-recuperable. Ya tenemos `audit.md`; añadir campo `recoverability_lost_at_stage`.
-
-### Paper
-
-5. **Cita central** en sección "Theoretical framing". Es el paper teórico de Mayo 2026 que **formaliza** lo que paper 03 (AI Harness Eng) ataca empíricamente y paper 07 (Vesper) demuestra ad-hoc. Trinity teórica perfecta:
-   - Paper 03 → componentes del harness (qué tiene).
-   - Paper 08 → cómo se compone matemáticamente (κ, λ, ψ).
-   - Paper 07 → evidencia empírica que la composición importa.
-
-6. **Adoptar la división de roles outer/inner**: nuestros agentes son `outer` (researcher, planner, structurer, reviewer) y `inner` (implementer, specifier en cierto modo). Lo encaja limpio en κ vs. λ,ψ.
-
-7. **Modo Partial Harness como contender** en el benchmark — directamente contrasta nuestro full harness contra "spec-only" para validar P3 en SE tasks.
-
-8. **NO adoptar todo el formalismo** (recoverability tubes, log-odds gaps). Es elegante pero exige notación pesada. Citarlo, no reproducirlo.
-
----
-
-## Veredicto franco
-
-Este es **el paper teórico más importante de la pila** para nuestro trabajo. Razones:
-
-1. Da **fundamento matemático** a la idea central del paper de NEC (paper 07): el harness no es "siempre más es mejor". Pasamos de "anécdota empírica" a "consecuencia formal".
-2. Predice un fenómeno (**Partial Harnessing**) que **ya estamos haciendo a medias** sin saberlo, y nos da el lenguaje para describirlo.
-3. Identifica un riesgo arquitectónico real (P2: guidance que no se ancla en evidencia amplifica alucinación) que **podemos auditar y mitigar mañana**.
-4. Provee vocabulario aceptable por reviewers teóricos (κ, λ, ψ, retention gap) sin que tengamos que probar teoremas — solo citarlos.
-
-**Acción concreta inmediata** (priorizada):
-
-1. **Auditoría ψ** (1h): clasificar reglas en `agents/*.md` evidence vs. compliance.
-2. **Definir modo `MISSION_PIPELINES["partial"]`** = ["SPEC"] o ["SPEC","PLAN"] solamente; tarea inicial scaffold, resto al agente.
-3. **Añadir contender "partial-harness"** al benchmark — predicción del paper testeable directamente en SE tasks.
-4. **Citar como anchor teórico** del framework en la sección 2 del paper. Vocabulario (κ, λ, ψ) en glosario.
-
-**Riesgo a evitar**: caer en la trampa formalista. El paper tiene 35 páginas con apéndices densos. Nuestro paper debe **citar las conclusiones, no reproducir las pruebas**. Hay belleza matemática pero ROI marginal en transcribirla.
+- **Granularidad *capability-aware* (elegir S/M/L según el modelo, no la tarea):** el routing es por fase, pero el tamaño del pipeline se decide por complejidad de tarea, no por capacidad del modelo activo.
+- **Marginal stopping rule en HITL:** no se detecta automáticamente cuándo añadir más checkpoints empeora el resultado.
+- **Métrica formal de *retention gap* (Γ) y todo el aparato de *recoverability tubes* / log-odds:** se cita el resultado pero no se reproduce la notación pesada; ROI marginal frente a su coste.
 
 ---
 

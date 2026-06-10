@@ -81,153 +81,34 @@ Interpretacion: **los tests solos detectan errores pero no los convierten en una
 
 ---
 
-## 3. Mapeo a nuestro harness
+## 3. Qué adoptamos en HERO y cómo está implementado
 
-| Reflexion | Nuestro harness | Diagnostico |
-|-----------|-----------------|-------------|
-| Actor | `implementer` | Encaja directo |
-| Evaluator | `reviewer` + tests + comandos | Tenemos evaluador mas rico, pero no siempre produce reward estructurado |
-| Self-Reflection model | No hay fase aislada | Gap claro: `audit.md` informa, pero no se destila siempre a "lesson learned" reutilizable |
-| Episodic memory | `context-hot.md` y compactacion a `context-cold.md` | Similar, pero nuestra memoria mezcla hallazgos, decisiones y resultados; no distingue reflexiones por fallo |
-| Max 1-3 reflections | No tenemos limite semantico por tipo de experiencia | Riesgo de contexto largo y difuso |
-| Retry loop | `reviewer -> reimplement` | Ya existe, pero Reflexion sugiere que el retry debe pasar por una verbalizacion causal del fallo |
-| Self-generated tests | Tests escritos por implementer, si procede | No hay protocolo explicito de generar tests adversariales antes de editar |
-| Heuristicas de fallo | Parciales en `CHECKPOINTS.md` y reviewer | Podriamos formalizar failure signatures |
+Reflexion propone *verbal reinforcement*: convertir el fallo en una reflexión causal que guía el siguiente intento. HERO lo implementa como gate disciplinario, no como framework aparte.
 
-**Posicion:** nuestro harness ya contiene Reflexion de forma implicita, pero distribuida entre fases. Lo que falta no es "hacer retry"; lo que falta es una unidad explicita de **verbal reinforcement** entre fallo y reintento.
+### Reflexión causal obligatoria antes de reintentar (diagnosis gate)
+- **Del paper:** entre fallo y retry debe mediar una verbalización de la causa.
+- **En HERO:** la fase REIMPLEMENT exige un bloque `## Diagnosis` validado por gate (`GATE_REQUIRED_MARKERS` en `src/core/gate.py`); el `audit.md` del reviewer se re-inyecta en el reintento (`src/mission/burst_runner.py`). No se reimplementa "a ciegas".
 
----
+### Self-Verification del actor (Reflexion interna)
+- **Del paper:** el actor reflexiona sobre su propia trayectoria.
+- **En HERO:** el implementer produce una sección `## Self-Verification` obligatoria con sub-checks (acceptance, edge cases, evidencia), validada por gate (`src/core/gate.py`; `agents/implementer.md`).
 
-## 4. Aplicabilidad — Harness
+### Memoria episódica corta y compactación
+- **Del paper:** memoria verbal acotada (1-3 reflexiones) que mejora decisiones sin saturar contexto.
+- **En HERO:** memoria por capas hot→cold con compactación automática al cerrar tarea (`compact_context` en `src/mission/burst_runner.py`, `prompts/compact-prompt.md`); solo hechos verificables pasan a `context-cold.md`.
 
-| Idea Reflexion | Coste | Beneficio | Impacto | Novedad |
-|----------------|-------|-----------|---------|---------|
-| **Reflection step explicito tras REJECTED**: antes de reimplementar, producir `reflection.md` o seccion en `status.md` con causa, evidencia y cambio de estrategia | Bajo | Alto | Alto | Baja-media |
-| **Convertir `audit.md` en lecciones compactas** para `context-hot.md`: "No volver a hacer X; evidencia Y; proximo intento Z" | Bajo | Alto | Alto | Baja |
-| **Failure signatures** (`test_false_positive`, `wrong_assumption`, `insufficient_exploration`, `overfit_acceptance`, `tool_failure`) | Bajo | Medio-alto | Alto | Media |
-| **Self-generated tests como advisory oracle** antes de final review | Medio | Medio | Alto en bug-fix/coding tasks | Baja |
-| **Limite de memoria reflexiva**: max 1-3 lecciones activas por tarea | Bajo | Medio | Medio | Baja |
-| **Reflexion baseline** en benchmark | Medio | Alto | Alto | Baja, pero metodologicamente necesaria |
-| Usar LLM evaluator para todo | Bajo | Bajo / Riesgoso | Medio | Baja |
+### Failure signatures persistentes
+- **Del paper:** etiquetar tipos de fallo para no repetirlos.
+- **En HERO:** el reviewer tipifica `failure_type` (`src/core/gate.py`); el refiner detecta modos de fallo recurrentes con umbral (`REFINER_MIN_RECURRENCE=2` en `src/harness/refiner.py`); y la memoria de proyecto mantiene una sección "Recurring Failure Modes" (`PROJECT_MEMORY.md` vía `src/harness/project_memory.py`).
 
-### Cambio pequeno pero potente
+## 4. No adoptado (y por qué)
 
-En el loop actual, cuando `reviewer` rechaza, no basta con pasar el `audit.md` al siguiente implementer. Conviene obligar al implementer a escribir una micro-reflexion antes de tocar codigo:
-
-```text
-Failure:
-- Que fallo exactamente.
-- Que evidencia lo demuestra.
-- Que asuncion mia fue incorrecta.
-- Que cambiare en el siguiente intento.
-- Que NO debo tocar.
-```
-
-Esto copia el mecanismo de Reflexion sin convertir el harness entero en otro framework.
-
-### Donde NO conviene copiar Reflexion literal
-
-- No usar self-generated tests como criterio de aceptacion final. Deben ser herramienta de exploracion, no oracle.
-- No dejar que reflexiones genericas entren en `context-cold.md`; solo lecciones causales y verificables.
-- No aplicar retries ilimitados. Reflexion funciona con ventanas pequenas; el crecimiento de contexto degrada.
-- No confundir "memoria de fallo" con "memoria de todo". La reflexion util es comprimida, causal y accionable.
+- **Self-generated tests como oracle de aceptación:** el propio paper muestra que generan false positives (MBPP); en HERO los tests del implementer son herramienta, no criterio de aceptación final, y no hay protocolo de tests adversariales pre-edición.
+- **Límite semántico estricto de 1-3 reflexiones activas por tarea:** la compactación acota el contexto, pero no se impone un tope numérico de "lecciones activas".
 
 ---
 
-## 5. Aplicabilidad — Paper / benchmark
-
-| Uso | Valor |
-|-----|-------|
-| **Related work obligatoria** | Alto. Reflexion es el prior art canonico de verbal self-improvement en agentes LLM. |
-| **Baseline metodologica** | Muy alto. Un contender "Raw + Reflexion loop" separaria la ganancia de simple retry/reflection de la ganancia del harness multi-fase. |
-| **Argumento para nuestra memoria hot/cold** | Medio. Reflexion demuestra que memoria verbal corta puede mejorar decision-making, pero no prueba memoria cross-mision. |
-| **Advertencia sobre generated tests** | Alto. Su fallo en MBPP Python es una cita perfecta para justificar hidden tests y oracles externos. |
-| **Cita de capability-dependence** | Medio-alto. StarChat no mejora; modelos fuertes si. Conecta con paper 05 y paper 08. |
-| **SOTA cuantitativo actual** | Bajo. Los numeros son de 2023; no usarlos como SOTA moderno, sino como evidencia historica del mecanismo. |
-
-### Implicacion para contenders
-
-El research plan actual tiene:
-
-- C1 Raw
-- C2 Loop tonto
-- C3 Harness
-
-Reflexion sugiere que C2 deberia ser mas preciso. Dos opciones:
-
-1. **Mantener C2 como loop tonto** y anadir C2b = Reflexion-style loop.
-2. **Redefinir C2** como `Raw + evaluate + reflect + retry`, con mismo budget que C3.
-
-La segunda opcion es mas limpia si el presupuesto es limitado. Si C3 gana a C2-Reflexion, entonces el paper puede afirmar que el valor no viene solo de "reintentar con feedback", sino de la estructura multi-fase del harness.
-
----
-
-## 6. Riesgo / beneficio / impacto / novedad
-
-### 6.1 Como aporte al harness
-
-La integracion de Reflexion es de **alto ROI** porque no requiere arquitectura nueva. Nuestro reviewer ya produce feedback; nuestros implementers ya reintentan; nuestro context layer ya persiste informacion. Falta una pequena pieza disciplinaria: convertir cada fallo en una reflexion causal antes del siguiente intento.
-
-**Beneficio esperado:** menos retries que repiten el mismo patron, mejor aprovechamiento de `audit.md`, y mejor compactacion post-mision.
-
-**Riesgo:** si la reflexion se genera sin evidencia, amplifica la narrativa equivocada. Esto conecta directamente con paper 08: guidance solo ayuda si el evaluator y la regla de guidance tienen retention gap positivo. Un `reflection.md` basado en tests falsos o en un audit superficial puede empeorar el siguiente intento.
-
-### 6.2 Como aporte al paper
-
-Reflexion es el baseline que cualquier reviewer preguntara: "Como se compara vuestro harness con un simple self-reflection loop?". No basta con compararnos contra Raw. Hay que mostrar que la estructura de agentes especializados, artefactos y review independiente aporta algo por encima de Reflexion.
-
-### 6.3 Novedad
-
-Como idea, Reflexion ya es clasico. La novedad no esta en usarlo; esta en:
-
-- meterlo como **componente interno** de un harness de ingenieria,
-- medirlo contra un harness multi-fase real,
-- separar reflection textual de oracles ejecutables,
-- estudiar coste/beneficio bajo budget de tokens.
-
----
-
-## 7. Decisiones recomendadas
-
-### Para el harness
-
-1. **Anadir un reflection checkpoint tras cada REJECTED**: el implementer debe destilar `audit.md` en causa, evidencia, cambio de estrategia y non-goals antes de editar.
-2. **Persistir solo reflexiones verificables** en `context-hot.md`; compactarlas a `context-cold.md` solo si describen un patron reutilizable.
-3. **Extender `reviewer.md`** para etiquetar el tipo de fallo: wrong assumption, missing test, overfit, regression, unclear spec, tool/env issue.
-4. **Permitir self-generated tests como herramienta**, pero no como acceptance. Reportar false positives si se usan en benchmark.
-5. **Limitar memoria reflexiva activa** a las ultimas 1-3 lecciones por tarea para evitar que el prompt se convierta en un archivo de arrepentimientos.
-
-### Para el paper
-
-1. **Citar Reflexion en related work** como prior art central de verbal reinforcement learning.
-2. **Incluir un contender Reflexion-style** o redefinir C2 como `Raw + reflect/retry`. Es el control metodologico mas importante tras Raw.
-3. **Usar sus limitaciones sobre generated tests** para justificar test suites ocultas, sandboxing y evaluadores externos.
-4. **No vender sus numeros como SOTA actual**. Usarlos como evidencia de mecanismo, no como estado del arte de 2026.
-5. **Conectar con paper 08**: Reflexion es una instancia concreta de inference-time guidance; ayuda cuando la reflexion esta anclada en evidencia, falla cuando induce local minima o false positives.
-
----
-
-## 8. Veredicto franco
-
-Reflexion es **menos avanzado que nuestro harness**, pero es **metodologicamente peligroso ignorarlo**. Si nuestro paper compara solo contra Raw, un reviewer puede decir: "quizas todo el beneficio viene de retry + self-reflection". Reflexion es exactamente ese baseline.
-
-Su aportacion mas valiosa para nosotros no es el resultado de HumanEval `91%` de 2023. Es la demostracion de que hay una diferencia real entre:
-
-- ejecutar tests y volver a intentar a ciegas,
-- y convertir el fallo en una explicacion causal que guia el siguiente intento.
-
-Esa distincion encaja perfectamente con nuestro `reviewer -> reimplement`, pero hoy no esta formalizada.
-
-**Accion concreta sugerida:**
-
-1. Convertir C2 del benchmark en **Reflexion-style loop**: generar, evaluar, reflexionar, reintentar con memoria corta.
-2. Introducir `reflection` como paso obligatorio tras `REJECTED` en el harness.
-3. Mantener tests generados como herramienta auxiliar, nunca como oracle final.
-4. Citar Reflexion junto a ReAct/Self-Refine en related work, y diferenciarlo claramente: Reflexion optimiza una politica por memoria verbal; nuestro trabajo evalua una metodologia de orquestacion multi-fase con roles, artefactos, HITL y coste.
-
----
-
-## 9. Sintesis con papers previos
+## 5. Síntesis con papers previos
 
 - **Paper 03 (AI Harness Engineering):** Reflexion es un mecanismo de feedback/control dentro del harness, no una arquitectura completa. Encaja como primitiva de recovery.
 - **Paper 04 (Code as Agent Harness):** cae en memory + feedback-driven control; sus self-generated tests son una forma ligera de agent-initiated code artifact.

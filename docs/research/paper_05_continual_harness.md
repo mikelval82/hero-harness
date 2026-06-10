@@ -50,97 +50,28 @@ Y un set fijo de **meta-tools** (`define_agent`, `run_code`, `process_memory`, n
 
 ---
 
-## 3. Mapeo a nuestro harness
+## 3. Qué adoptamos en HERO y cómo está implementado
 
-| Componente Continual Harness | Equivalente nuestro | Estado |
-|------------------------------|---------------------|--------|
-| $p$ system prompt | Templates en `prompts/` y mode pipelines | ✅ Estático. Nunca se reescribe en runtime. |
-| $G$ sub-agents | `agents/*.md` (researcher, specifier, planner, implementer, reviewer, ...) | ✅ Estático. No se crean ni eliminan durante una misión. |
-| $K$ skills | `commands/` (custom commands editables) | ✅ Estáticos. El humano los edita entre misiones. |
-| $M$ memory | `context-hot.md` + `context-cold.md` + `code_graph.json` | ⚠️ Dinámico **dentro** de una misión, pero no editado por un Refiner LLM dedicado; sólo compactado heurísticamente. |
-| Meta-tools (`define_agent`, `run_code`, ...) | — | ❌ No existen. El agente actual no puede crear sub-agentes, modificar skills, ni reescribir su propio system prompt. |
-| Refiner outer loop cada $F$ steps | — | ❌ No tenemos refiner. El reviewer es el más parecido pero sólo aprueba/rechaza el output, no edita el harness. |
-| Reset-free | ⚠️ Las misiones sí son atómicas y la siguiente arranca con workspace nuevo. Dentro de la misión sí es reset-free de facto. | Parcial |
-| Co-learning modelo+harness | ❌ Modelo congelado (Sonnet) | N/A — fuera de scope |
+HERO toma la **versión segura** de Continual Harness: un refiner que mejora el harness *entre* misiones con aprobación humana, en vez de auto-modificación online.
 
-**Posición:** somos un harness **estático tipo Hexpert** (en su terminología). Nuestro valor humano es justo el "human refiner" de GPP fase (1). Continual Harness automatizaría esa fase humana.
+### Refiner post-misión (la idea fuerte del paper, adaptada)
+- **Del paper:** un Refiner en outer loop que observa trazas y edita el harness (prompts, sub-agentes, skills, memoria).
+- **En HERO:** `src/harness/refiner.py` lee `_telemetry.jsonl`, los `audit.md` y los fallos de la case base, detecta firmas de fallo recurrentes (`failure_type@stage` con recurrencia ≥ `REFINER_MIN_RECURRENCE = 2`) y **escribe una propuesta** (`refiner-proposal.md`) con evidencia y acciones. No aplica cambios: requiere aprobación humana (contrato en `research_plan/refiner_post_mission.md`, skill `commands/refine-harness.md`).
 
----
+### Failure-signature detection sobre trazas
+- **Del paper:** detectar loops, fallos de tool-call y objetivos estancados desde las trazas.
+- **En HERO:** `_signals_from_telemetry()` en `src/harness/refiner.py` extrae señales de fallo de la telemetría (`src/harness/telemetry.py`).
 
-## 4. Aplicabilidad — qué tomar de este paper
+### Modelo 4-componente (p, G, K, M) como artefactos editables
+- **Del paper:** el estado del harness se descompone en system prompt $p$, sub-agentes $G$, skills $K$ y memoria $M$.
+- **En HERO:** $p$ → `prompts/`; $G$ → `agents/*.md`; $K$ → `commands/`; $M$ → pizarra `context-hot/cold` + memoria persistente (`src/harness/project_memory.py`, `case_base.py`, `skill_library.py`). Son **editables entre misiones** (harness estático tipo "Hexpert"), y el refiner propone esas ediciones.
 
-### 4.1 Para el **harness** (implementación)
+### Reset-free dentro de la misión
+- **Del paper:** operación sin resets.
+- **En HERO:** cada misión es atómica con workspace efímero nuevo; dentro de la misión, la ejecución es reset-free de facto (`src/mission/runner.py`).
 
-| Idea | Coste | Beneficio | Impacto | Novedad |
-|------|-------|-----------|---------|---------|
-| **Refiner post-misión** que lee `audit.md` + trazas y propone ediciones a `agents/*.md`, `commands/`, prompts | Medio. Loop async fuera del runner. Humano aprueba antes de aplicar | Alto a medio plazo. Convierte cada misión en oportunidad de mejora del harness | Alto en uso continuado | Alta — alinea con thread "harness as optimization object" sin riesgo de auto-modificación en vivo |
-| **Refiner mid-misión** (cada N tareas o N bursts, no cada F steps) que edita prompts/skills | Alto. Estabilidad/rollback no triviales. Riesgo de degradar el harness en vivo | Bajo-Medio. Las misiones nuestras son cortas comparadas con Pokémon (horas vs días) | Bajo en nuestro régimen | Alta |
-| **Meta-tools** (`define_agent`, `run_code`, `edit_skill`) expuestas al agente | Muy alto. Cambio arquitectural mayor; estabilidad, permisos, rollback | Bajo a corto. Alto a largo. | Bajo en nuestro régimen actual | Alta |
-| **4-componente harness state** ($p, G, K, M$) como modelo explícito de qué se puede editar | Bajo (conceptual) | Medio. Da estructura clara para futuras extensiones | Medio | Baja |
-| **Failure signatures** detectadas automáticamente sobre trazas (loops, tool-call failures, stalled objectives) | Bajo | Medio. Telemetría útil incluso sin Refiner | Medio | Baja |
-| **Co-learning modelo+harness** | Fuera de scope (modelo frozen) | — | — | — |
+## 4. No adoptado (y por qué)
 
-### 4.2 Para el **paper / benchmark**
-
-| Uso | Valor |
-|-----|-------|
-| **Citar como contraste de dominio** | Alto. Su dominio (embodied/Pokémon) es complementario al nuestro (code-gen). Refuerza la generalidad de "harness as object of optimization". |
-| **Adoptar la descomposición 4-componente** ($p, G, K, M$) como vocabulario | Alto. Da formalismo claro y permite describir nuestros 3 contenders en función de qué partes están presentes/refinables. |
-| **Punto de "capability-dependent gains"** | Alto. Su hallazgo de "Continual Harness funciona en Pro, falla en Flash-Lite" es directamente relevante a nuestra hipótesis: el beneficio del harness puede ser **no monotónico en capacidad del modelo**. Sugiere experimento opcional con un modelo más pequeño. |
-| **Reset-free como propiedad de diseño** | Medio. Nuestra `mission` es reset (workspace efímero); dentro de una misión, somos reset-free. Vocabulario útil. |
-| **Como competencia directa** | **No.** Dominio distinto, método ortogonal. Más bien complementario en una taxonomía de harnesses auto-mejorantes. |
-
----
-
-## 5. Análisis Riesgo · Beneficio · Impacto · Novedad
-
-### 5.1 Como aporte al harness
-
-- **Idea fuerte:** Refiner **post-misión** (no mid-misión) que lee trazas + `audit.md` y propone ediciones a `agents/*.md`, prompts, `commands/`. **Humano aprueba**, no se aplica solo. Es la versión segura de Continual Harness para nuestro régimen.
-  - Coste medio, beneficio alto a medio plazo, novedad alta en framing.
-- **Idea débil para nosotros:** Refiner mid-misión y meta-tools. Coste alto, beneficio bajo dado que nuestras misiones son cortas. El paper mismo muestra que esto requiere capacidad del modelo grande (Pro funciona, Flash-Lite no) — y aún con modelos pequeños fracasa.
-- **Failure signatures automáticas** sobre trazas: útil aunque no haya Refiner. Sólo telemetría.
-
-### 5.2 Como aporte al paper
-
-Buen contraste de dominio para mostrar que el harness importa también fuera de coding. La descomposición 4-componente es vocabulario aprovechable. Su finding de "capability-dependent gains" es **un detalle importante** que conviene replicar/citar: el beneficio del harness no es plano respecto a la capacidad del modelo, lo que tiene implicaciones para H1-H5 del research_plan.
-
-### 5.3 Riesgos
-
-- Si abrazamos demasiado el thread "self-improving harness", entramos en competencia con un thread saturado (paper 04 listó 5 papers en él). Nuestro nicho es el **harness estático bien diseñado**, no el auto-modificable.
-- Confundir "Refiner entre misiones" con "harness self-modifying" — son cosas distintas. La primera es práctica de meta-learning offline, la segunda es self-modification online (riesgosa, capability-dependent).
-
----
-
-## 6. Decisiones recomendadas
-
-### Para el harness
-
-1. **Considerar a futuro** un Refiner **post-misión** + **human approval** que sugiera ediciones a `agents/*.md`, prompts, `commands/`. Es una skill opcional, fuera del runner.
-2. **No** introducir meta-tools en runtime para que el agente edite su harness mid-misión. Coste alto, beneficio bajo en nuestro régimen, riesgo de inestabilidad.
-3. **Adoptar la nomenclatura 4-componente** ($p, G, K, M$) en la documentación del harness. Cero coste, claridad arquitectural.
-4. **Implementar failure-signature detection** sobre trazas (loops de tool-calls, stalled status.md, repeated edits) como telemetría — incluso sin Refiner. Útil para HITL y debug.
-
-### Para el paper
-
-1. **Citar** como evidencia de que la frontera "harness vs. modelo" se está volviendo aprendible (alineado con "harness as distillation surface" de paper 04).
-2. **Adoptar** el formalismo $p, G, K, M$ + meta-tools como marco para describir nuestros contenders en la sección de método.
-3. **Considerar añadir** un mini-experimento secundario: correr nuestro benchmark con un modelo más pequeño (Sonnet 4 → Sonnet 3.5 o Haiku) para testar la hipótesis "capability-dependent harness gains". Bajo coste, alto valor empírico, alineado con su finding.
-4. **Posicionarnos como complementarios:** ellos auto-refinan el harness para un dominio donde no hay harness experto; nosotros validamos que un harness estático bien diseñado domina a baselines en un dominio (code-gen) donde sí hay harness expertos.
-
----
-
-## 7. Veredicto franco
-
-- **Calidad del paper:** alto. Tiene método claro, experimentos serios, dos loops bien diferenciados, contribución empírica (primer AI en completar varios Pokémon) y resultados con caveats honestos (capability-dependent).
-- **Relevancia para nosotros:** **media.** Dominio muy distinto. La idea del Refiner es importante pero su aplicación literal (mid-episode, meta-tools en runtime) no es para nosotros. La aplicación **adaptada** (Refiner post-misión con aprobación humana) sí merece exploración.
-- **Lo más valioso:**
-  - Formalismo 4-componente $(p, G, K, M)$ + meta-tools.
-  - Finding empírico: harness gains son capability-dependent, no monotónicos.
-  - El reset-free como propiedad de diseño con implicaciones prácticas.
-- **Lo menos relevante:** co-learning modelo+harness (irrelevante porque trabajamos con LLM frozen propietario).
-
-**Acción concreta sugerida:**
-1. Adoptar nomenclatura $p, G, K, M$ en docs del harness.
-2. Anotar **Refiner post-misión** como skill opcional a futuro.
-3. Plantear como experimento opcional del benchmark: "harness benefit como función de model capability" usando 2 tamaños de modelo.
+- **Refiner mid-misión / auto-modificación online:** no se edita el harness en vivo. Nuestras misiones son cortas (minutos/horas, no días de Pokémon) y el propio paper muestra que la auto-modificación online es *capability-dependent* y frágil.
+- **Meta-tools en runtime (`define_agent`, `run_code`, `edit_skill`):** el agente no puede crear sub-agentes ni reescribir su prompt durante la misión. Coste arquitectural alto (permisos, rollback, estabilidad) y beneficio bajo en nuestro régimen.
+- **Co-learning modelo + harness:** fuera de scope; el modelo es frozen.
