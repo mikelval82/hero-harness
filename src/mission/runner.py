@@ -7,7 +7,7 @@ from typing import Any, Callable
 from src.mission.phase_runner import PhaseRunner
 from src.core.block_state import BlockKind, BlockReason, BlockState
 from src.core.notification import notify
-from src.core.state import update_state, MissionStateProtocol
+from src.core.state import ControlState, update_state, MissionStateProtocol
 from src.mission.signals import check_signals
 from src.mission.human_input import HumanInput
 from src.mission.reporting import (
@@ -55,6 +55,16 @@ class MissionRunner:
         self.task_executor = task_executor
 
     def execute(self) -> None:
+        try:
+            self._execute()
+        except Exception:
+            if self.mission_state.control_state == ControlState.ABORT_PENDING:
+                self.mission_state.set_control_state(ControlState.ABORTED)
+            elif self.mission_state.control_state != ControlState.ABORTED:
+                self.mission_state.set_control_state(ControlState.FAILED)
+            raise
+
+    def _execute(self) -> None:
         harness = self.ctx.harness
         tasks_path = harness / "tasks.json"
         resuming = self.ctx.resume and tasks_path.is_file()
@@ -67,6 +77,7 @@ class MissionRunner:
             notify(f"Mission started: {self.ctx.task}\nBranch: {self.ctx.branch} | Mode: {self.ctx.mode}")
 
             if not self._run_init_phases():
+                self._finish_control_state()
                 return
 
         if self.ctx.mode == "explore":
@@ -78,6 +89,7 @@ class MissionRunner:
             self.log("ERROR: research/structure did not produce tasks.json")
             print("ERROR: research/structure did not produce tasks.json")
             notify_result(self.ctx.task, self.ctx.branch, harness, self.blocked)
+            self.mission_state.set_control_state(ControlState.FAILED)
             return
 
         tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
@@ -110,13 +122,24 @@ class MissionRunner:
             if phase_name == PhaseName.COMPACT:
                 self.burst.compact_context()
                 build_code_graph(ctx.project_dir, log=self.log)
+                if not self._checkpoint():
+                    self.log(f"<<< Mission BLOCKED: {self.blocked.value}")
+                    self._generate_blocked_report()
+                    notify_result(ctx.task, ctx.branch, harness, self.blocked)
+                    return False
                 continue
 
             if phase_name == PhaseName.GRILL:
                 if optional and ctx.no_grill:
                     continue
                 update_state(PhaseName.GRILL, harness, self.mission_state, mode=ctx.mode)
-                get_input = HumanInput(self.command_queue, self.blocked, log=self.log)
+                get_input = HumanInput(
+                    self.command_queue,
+                    self.blocked,
+                    log=self.log,
+                    mission_state=self.mission_state,
+                    harness=harness,
+                )
                 self.phase_runner.run_conversation(
                     PHASE_REGISTRY[PhaseName.GRILL], {"TASK": ctx.task}, get_input, log=self.log)
             elif phase_name == PhaseName.STRUCTURE:
@@ -136,13 +159,13 @@ class MissionRunner:
 
             if self.blocked.reason:
                 self.log(f"<<< Mission BLOCKED: {self.blocked.value}")
-                self._generate_report()
+                self._generate_blocked_report()
                 notify_result(ctx.task, ctx.branch, harness, self.blocked)
                 return False
 
             if not check_signals(self.command_queue, harness, self.mission_state, self.blocked):
                 self.log(f"<<< Mission BLOCKED: {self.blocked.value}")
-                self._generate_report()
+                self._generate_blocked_report()
                 notify_result(ctx.task, ctx.branch, harness, self.blocked)
                 return False
 
@@ -158,11 +181,32 @@ class MissionRunner:
         finalize_steps = pipeline["finalize"]
         has_merge = "merge" in finalize_steps
 
+        # Finalization can itself start an LLM report and mutate git. Always
+        # honor pending pause/abort before either operation, including modes
+        # which do not commit or merge.
+        if not self._checkpoint():
+            self.log("Finalization skipped: mission control stopped execution")
+            notify_result(ctx.task, ctx.branch, ctx.harness, self.blocked)
+            self._finish_control_state()
+            return
+
         if has_merge:
             final_commit(ctx.task, _task_summary(ctx.harness))
+            if not self._checkpoint():
+                self.log("Report generation skipped: mission control stopped after final commit")
+                notify_result(ctx.task, ctx.branch, ctx.harness, self.blocked)
+                self._finish_control_state()
+                return
 
         self._generate_report()
+        if not self._checkpoint():
+            self.log("Mission control stopped execution after report generation")
         notify_result(ctx.task, ctx.branch, ctx.harness, self.blocked)
+
+        merge_allowed = True
+        if has_merge and not self.blocked.reason and not self._checkpoint():
+            merge_allowed = False
+            self.log("Final merge skipped: mission control stopped execution")
 
         if self.blocked.reason:
             self.log(f"Mission BLOCKED: {self.blocked.value}")
@@ -174,12 +218,43 @@ class MissionRunner:
                 self.log(f"Mission partial: {_task_summary(ctx.harness)}")
             else:
                 self.log("Mission complete")
-            if has_merge:
+            if has_merge and merge_allowed:
                 merged = merge_to_develop(ctx.branch, self.log)
                 if merged:
                     notify(f"Merged {ctx.branch} → develop")
                 else:
                     notify(f"Branch {ctx.branch} NOT merged (tests failed or conflict)")
+
+        self._finish_control_state()
+
+    def _checkpoint(self) -> bool:
+        return check_signals(
+            self.command_queue,
+            self.ctx.harness,
+            self.mission_state,
+            self.blocked,
+        )
+
+    def _finish_control_state(self) -> None:
+        if self.mission_state.control_state == ControlState.ABORT_PENDING:
+            self.blocked.reason = BlockReason(BlockKind.USER_ABORT)
+        if self.blocked.is_mission_abort:
+            self.mission_state.set_control_state(ControlState.ABORTED)
+            return
+        if self.blocked.reason:
+            self.mission_state.set_control_state(ControlState.FAILED)
+            return
+        tasks_path = self.ctx.harness / "tasks.json"
+        if tasks_path.is_file():
+            try:
+                tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                self.mission_state.set_control_state(ControlState.FAILED)
+                return
+            if any(task.get("status") == "failed" for task in tasks):
+                self.mission_state.set_control_state(ControlState.FAILED)
+                return
+        self.mission_state.set_control_state(ControlState.COMPLETED)
 
     def _generate_report(self) -> None:
         generate_report(self.client, task=self.ctx.task, branch=self.ctx.branch,
@@ -201,6 +276,16 @@ class MissionRunner:
             self.log("Mission case saved")
         if sync_project_memory(self.ctx.harness):
             self.log("Project memory synced")
+
+    def _generate_blocked_report(self) -> None:
+        """Generate failure evidence unless the user explicitly aborted."""
+
+        if self.blocked.is_mission_abort:
+            # Abort during a wait or LLM phase must not trigger another LLM
+            # call just to produce a report.
+            self.log("Report generation skipped after user abort")
+            return
+        self._generate_report()
 
 
 def create_runner(

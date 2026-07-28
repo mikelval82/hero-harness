@@ -154,6 +154,25 @@ def test_create_with_retry_backoff_timing():
     assert sleep_calls[2] == pytest.approx(4.5)
 
 
+def test_create_with_retry_does_not_start_backoff_past_deadline():
+    from anthropic import APITimeoutError
+    from src.agent.loop import RequestDeadlineExceeded, create_with_retry
+
+    client = MagicMock()
+    client.messages.create.side_effect = APITimeoutError(request=MagicMock())
+    with patch("src.agent.loop.time.monotonic", side_effect=[0.0, 0.75, 0.75]):
+        with patch("src.agent.loop.random.random", return_value=0.0):
+            with patch("src.agent.loop.time.sleep") as sleep:
+                with pytest.raises(RequestDeadlineExceeded):
+                    create_with_retry(
+                        client,
+                        deadline=1.0,
+                        model="m",
+                        messages=[],
+                    )
+    sleep.assert_not_called()
+
+
 def test_extract_text_single_block():
     from src.agent.loop import _extract_text
     response = _make_response("end_turn", [_text_block("hello world")])
@@ -239,6 +258,26 @@ def test_run_phase_uses_explicit_model():
     assert client.messages.create.call_args[1]["model"] == "claude-haiku-4-5"
 
 
+def test_run_phase_passes_remaining_deadline_to_api_request():
+    from src.agent.loop import run_phase
+
+    client = MagicMock()
+    client.messages.create.return_value = _make_response("end_turn", [_text_block("done")])
+    with patch("src.agent.loop.time.monotonic", side_effect=[0.0, 1.0, 2.0, 3.0]):
+        run_phase(
+            client,
+            system_prompt="sys",
+            user_prompt="go",
+            tools=[],
+            phase_name="test",
+            project_dir=Path("/tmp/proj"),
+            harness_dir=Path("/tmp/harness"),
+            timeout=120,
+        )
+
+    assert client.messages.create.call_args.kwargs["timeout"] == pytest.approx(118.0)
+
+
 def test_run_phase_tool_result_message_structure():
     from src.agent.loop import run_phase
     client = MagicMock()
@@ -248,7 +287,7 @@ def test_run_phase_tool_result_message_structure():
     client.messages.create.side_effect = [tool_resp, end_resp]
     with patch("src.agent.loop.execute_tool", return_value="data"):
         run_phase(
-            client, system_prompt="sys", user_prompt="go", tools=[],
+            client, system_prompt="sys", user_prompt="go", tools=[{"name": "Read"}],
             phase_name="test", project_dir=Path("/tmp/proj"),
             harness_dir=Path("/tmp/harness"),
         )
@@ -270,7 +309,7 @@ def test_run_phase_on_tool_call_invoked():
     callback = MagicMock()
     with patch("src.agent.loop.execute_tool", return_value="output"):
         run_phase(
-            client, system_prompt="sys", user_prompt="go", tools=[],
+            client, system_prompt="sys", user_prompt="go", tools=[{"name": "Bash"}],
             phase_name="test", project_dir=Path("/tmp/proj"),
             harness_dir=Path("/tmp/harness"), on_tool_call=callback,
         )
@@ -303,7 +342,7 @@ def test_run_phase_truncates_large_tool_result():
     big_result = "x" * (MAX_TOOL_RESULT + 1000)
     with patch("src.agent.loop.execute_tool", return_value=big_result):
         run_phase(
-            client, system_prompt="sys", user_prompt="go", tools=[],
+            client, system_prompt="sys", user_prompt="go", tools=[{"name": "Read"}],
             phase_name="test", project_dir=Path("/tmp/proj"),
             harness_dir=Path("/tmp/harness"),
         )
@@ -369,6 +408,29 @@ def test_run_conversation_respects_max_turns():
     assert client.messages.create.call_count == 3
 
 
+def test_run_conversation_abort_signal_does_not_call_llm_again():
+    from src.agent.loop import ABORT_SIGNAL, run_conversation
+
+    client = MagicMock()
+    client.messages.create.return_value = _make_response(
+        "end_turn", [_text_block("A question for the user")]
+    )
+
+    result = run_conversation(
+        client,
+        system_prompt="sys",
+        user_prompt="go",
+        tools=[],
+        phase_name="grill",
+        project_dir=Path("/tmp/proj"),
+        harness_dir=Path("/tmp/harness"),
+        get_human_input=lambda _text: ABORT_SIGNAL,
+    )
+
+    assert result.turns == 1
+    assert client.messages.create.call_count == 1
+
+
 def test_run_phase_multiple_tool_blocks():
     from src.agent.loop import run_phase
     client = MagicMock()
@@ -383,7 +445,8 @@ def test_run_phase_multiple_tool_blocks():
         return "result_" + name
     with patch("src.agent.loop.execute_tool", side_effect=mock_execute):
         result = run_phase(
-            client, system_prompt="sys", user_prompt="go", tools=[],
+            client, system_prompt="sys", user_prompt="go",
+            tools=[{"name": "Read"}, {"name": "Glob"}],
             phase_name="test", project_dir=Path("/tmp/proj"),
             harness_dir=Path("/tmp/harness"),
         )
@@ -504,7 +567,7 @@ def test_run_conversation_tool_stop_condition_exits(tmp_path):
     client.messages.create.return_value = tool_resp
     with patch("src.agent.loop.execute_tool", return_value="ok"):
         result = run_conversation(
-            client, system_prompt="sys", user_prompt="go", tools=[],
+            client, system_prompt="sys", user_prompt="go", tools=[{"name": "Write"}],
             phase_name="grill", project_dir=tmp_path / "proj",
             harness_dir=harness,
             get_human_input=lambda text: "continue",

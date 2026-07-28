@@ -255,6 +255,13 @@ class TaskExecutor:
             )
 
             self._run_phase(phase_name, task_id, task_vars)
+            if not self.check_signals(
+                self.command_queue,
+                self.ctx.harness,
+                self.mission_state,
+                self.blocked,
+            ):
+                return False
             if phase_name == PhaseName.PLAN:
                 self._ensure_decisions_file()
 

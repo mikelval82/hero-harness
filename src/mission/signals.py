@@ -4,53 +4,100 @@ import queue
 
 from src.core.block_state import BlockKind, BlockReason
 from src.core.notification import notify
-from src.core.state import _apply_gate_change
+from src.core.state import ControlState, MissionStateProtocol, _apply_gate_change
+from src.mission.control import coerce_envelope
 
 
-def _restore_deferred(command_queue, deferred):
-    for cmd in deferred:
-        command_queue.put(cmd)
+def _abort(mission_state: MissionStateProtocol | None, blocked) -> bool:
+    blocked.reason = BlockReason(BlockKind.USER_ABORT)
+    if mission_state is not None:
+        mission_state.set_control_state(ControlState.ABORTED)
+    notify("\U0001f6d1 Mission aborted by user")
+    return False
 
 
-def _wait_for_resume(command_queue, harness, mission_state, blocked, deferred):
+def _wait_for_resume(command_queue, harness, mission_state, blocked):
+    if (
+        mission_state is not None
+        and mission_state.control_state == ControlState.RUNNING
+    ):
+        # A /resume received before this checkpoint cancelled pause_pending.
+        return True
+
+    if mission_state is not None:
+        mission_state.set_control_state(ControlState.PAUSED)
+
     while True:
+        if (
+            mission_state is not None
+            and mission_state.control_state == ControlState.ABORT_PENDING
+        ):
+            return _abort(mission_state, blocked)
         try:
-            cmd = command_queue.get(timeout=5)
+            raw = command_queue.get(timeout=5)
         except queue.Empty:
             continue
-        action = cmd.get("cmd", "")
-        if action == "resume":
+        cmd = coerce_envelope(raw)
+        if cmd.name == "resume":
+            if mission_state is not None:
+                mission_state.set_control_state(ControlState.RUNNING)
             return True
-        if action == "abort":
-            blocked.reason = BlockReason(BlockKind.USER_ABORT)
-            notify("\U0001f6d1 Mission aborted by user via Telegram")
-            return False
-        if action == "gate":
+        if cmd.name == "abort":
+            return _abort(mission_state, blocked)
+        if cmd.name == "gate" and cmd.get("mode") in {"manual", "auto"}:
             _apply_gate_change(cmd["mode"], harness, mission_state)
-        else:
-            deferred.append(cmd)
+        # Commands that cannot be acted on in a pause are intentionally
+        # discarded.  Requeueing would let stale decisions escape into a
+        # later interaction.
 
 
 def check_signals(command_queue, harness, mission_state, blocked):
-    deferred = []
-    try:
-        while True:
-            try:
-                cmd = command_queue.get_nowait()
-            except queue.Empty:
-                break
-            action = cmd.get("cmd", "")
-            if action == "abort":
-                blocked.reason = BlockReason(BlockKind.USER_ABORT)
-                notify("\U0001f6d1 Mission aborted by user via Telegram")
+    """Apply control commands at a safe checkpoint.
+
+    Commands for an interaction are consumed only by that interaction.  If
+    they reach a checkpoint they are stale and are discarded, never deferred.
+    """
+    if (
+        mission_state is not None
+        and mission_state.control_state == ControlState.ABORT_PENDING
+    ):
+        return _abort(mission_state, blocked)
+    if (
+        mission_state is not None
+        and mission_state.control_state in {
+            ControlState.PAUSE_PENDING,
+            ControlState.PAUSED,
+        }
+    ):
+        return _wait_for_resume(command_queue, harness, mission_state, blocked)
+
+    while True:
+        try:
+            raw = command_queue.get_nowait()
+        except queue.Empty:
+            break
+        cmd = coerce_envelope(raw)
+        if cmd.name == "abort":
+            return _abort(mission_state, blocked)
+        if cmd.name == "pause":
+            if mission_state is not None:
+                # A resume may have cancelled the pending pause while the
+                # phase was still running.
+                if (
+                    mission_state.control_state == ControlState.RUNNING
+                    and cmd.source != "legacy"
+                ):
+                    continue
+                mission_state.set_control_state(ControlState.PAUSE_PENDING)
+            if not _wait_for_resume(command_queue, harness, mission_state, blocked):
                 return False
-            if action == "pause":
-                if not _wait_for_resume(command_queue, harness, mission_state, blocked, deferred):
-                    return False
-            elif action == "gate":
-                _apply_gate_change(cmd["mode"], harness, mission_state)
-            else:
-                deferred.append(cmd)
-        return True
-    finally:
-        _restore_deferred(command_queue, deferred)
+        elif cmd.name == "gate" and cmd.get("mode") in {"manual", "auto"}:
+            _apply_gate_change(cmd["mode"], harness, mission_state)
+        # resume outside a pause and every interaction command are stale here.
+
+    return True
+
+
+def control_checkpoint(command_queue, harness, mission_state, blocked) -> bool:
+    """Named wrapper used at phase and git boundaries."""
+    return check_signals(command_queue, harness, mission_state, blocked)

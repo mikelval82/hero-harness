@@ -8,9 +8,6 @@ Subcommands:
   update-task <index> <status>
   task-summary
   parse-files <status.md>
-  register-mission <tag> <harness_path> <pid>
-  unregister-mission <tag>
-  list-missions
   refiner-proposal [harness_path] [min_recurrence]
 """
 import json
@@ -22,12 +19,6 @@ from pathlib import Path
 
 from src.core.paths import HARNESS
 from src.harness import tasks
-from src.harness.registry import (
-    REGISTRY_PATH,
-    register_mission,
-    unregister_mission,
-    list_missions,
-)
 from src.harness.prompt_renderer import (
     PromptRenderer,
     render_prompt,
@@ -63,8 +54,6 @@ def setup_harness(branch: str, gate: bool, cwd=None, resume: bool = False, task:
     cwd = Path(cwd or Path.cwd()).resolve()
     branch_safe = sanitize_name(branch, max_len=60)
     project_name = sanitize_name(cwd.name)
-    mission_tag = f"{project_name}:{branch_safe}"
-
     harness = Path.home() / '.harness' / project_name / branch_safe
     harness_win = str(harness.resolve())
     preserving_harness = resume and harness.exists() and (harness / "tasks.json").is_file()
@@ -87,7 +76,6 @@ def setup_harness(branch: str, gate: bool, cwd=None, resume: bool = False, task:
     return {
         'harness': harness,
         'harness_win': harness_win,
-        'mission_tag': mission_tag,
         'project_name': project_name,
         'branch_safe': branch_safe,
         'project_memory_path': memory_info['persistent'],
@@ -175,24 +163,6 @@ def cmd_parse_files(args):
         print(f)
 
 
-def cmd_register_mission(args):
-    if len(args) != 3:
-        print("Usage: register-mission <tag> <harness_path> <pid>", file=sys.stderr)
-        sys.exit(1)
-    register_mission(args[0], args[1], int(args[2]))
-
-
-def cmd_unregister_mission(args):
-    if len(args) != 1:
-        print("Usage: unregister-mission <tag>", file=sys.stderr)
-        sys.exit(1)
-    unregister_mission(args[0])
-
-
-def cmd_list_missions(args):
-    print(json.dumps(list_missions(), indent=2))
-
-
 def cmd_refiner_proposal(args):
     harness = Path(args[0]) if args else HARNESS
     min_recurrence = int(args[1]) if len(args) > 1 else 2
@@ -208,9 +178,6 @@ COMMANDS = {
     "update-task": cmd_update_task,
     "task-summary": cmd_task_summary,
     "parse-files": cmd_parse_files,
-    "register-mission": cmd_register_mission,
-    "unregister-mission": cmd_unregister_mission,
-    "list-missions": cmd_list_missions,
     "refiner-proposal": cmd_refiner_proposal,
 }
 

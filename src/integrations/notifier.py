@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -18,13 +19,19 @@ def compute_notify_prefix(project_name: str) -> str:
 def notify(msg: str, prefix: str = "") -> None:
     if prefix:
         msg = prefix + "\n" + msg
-    if len(msg) > 4000:
-        msg = msg[:3997] + "..."
 
     token = os.environ.get("TELEGRAM_TOKEN", "")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
     if token and chat_id:
-        telegram_api.send_message(token, chat_id, msg)
+        try:
+            telegram_api.send_message(token, chat_id, msg)
+        except Exception as exc:
+            # Telegram is an optional control plane and must never fail the
+            # coding mission. Keep permanent and transient failures visible.
+            print(
+                f"Telegram notification failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
 
 
 def notify_result(task: str, branch: str, harness: Path, blocked_at: str = "",

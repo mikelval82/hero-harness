@@ -150,6 +150,20 @@ python src/cli.py "Add pagination to the products endpoint" --mode full
 Mission artifacts are written to an isolated workspace (`$CLAUDE_HARNESS`); your target
 project only receives the requested code changes.
 
+### Optional Telegram control
+
+Set both `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` to bind a private Telegram bot to
+the current mission. Every command acts only on that mission. A token can be owned by
+one running mission; if it is already in use, another mission continues without
+Telegram. Set neither variable to disable the integration—partial configuration is an
+error.
+
+The bot supports status and artifact reads, safe-point control (`/pause`, `/resume`,
+`/abort`, `/gate`), correlated grill/review decisions, and `/ask <question>` for a
+read-only code query. `/ask` uses only `Read`, `Glob`, `Grep`, and a read-only
+`CodeGraph`; it cannot write files or run Bash. See the complete command-state contract
+in [`docs/design/telegram_single_mission.md`](docs/design/telegram_single_mission.md).
+
 ## The Tron Arena benchmark
 
 A deterministic two-player Tron engine for benchmarking bot strategies, used to measure

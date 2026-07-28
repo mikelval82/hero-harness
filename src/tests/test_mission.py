@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 from src import cli as mission
 
 from src.cli import parse_args, resolve_args
-from src.core.state import update_state, _apply_gate_change
+from src.core.state import MissionState, update_state, _apply_gate_change
 from src.mission.signals import check_signals
 from src.mission.human_input import _parse_stdin_line
 from src.core.block_state import BlockState, BlockKind, BlockReason
@@ -36,7 +36,6 @@ from src.harness.telemetry import read_events, write_phase_event
 from src.integrations.notifier import PROJECT_COLORS, compute_notify_prefix
 from src.agent.loop import PhaseResult, PhaseTimeout
 from src.core.context import DEFAULT_TOOLS, PHASE_REGISTRY, MissionContext, PhaseConfig
-from src.integrations.telegram_listener import MissionState
 import src.agent.loop as _al
 from src.mission import reporting as reporting_mod
 from src.mission import phase_runner as phase_runner_mod
@@ -232,7 +231,11 @@ def test_parse_stdin_line_gate_off():
 
 def test_parse_stdin_line_gate_invalid_arg():
     result = _parse_stdin_line("/gate foo")
-    assert result == {"cmd": "answer", "text": "/gate foo"}
+    assert result == {"cmd": "gate", "text": "foo"}
+
+
+def test_parse_stdin_line_preserves_invalid_no_arg_command_arguments():
+    assert _parse_stdin_line("/pause later") == {"cmd": "pause", "text": "later"}
 
 
 def test_parse_stdin_line_plain_text():
@@ -498,7 +501,7 @@ def test_setup_harness_basic(tmp_path, save_env, monkeypatch):
     result = setup_harness("feat-x", False, cwd=tmp_path)
     assert result["branch_safe"] == "feat-x"
     assert result["project_name"] == _sanitize_name(tmp_path.name)
-    assert result["mission_tag"] == f"{result['project_name']}:feat-x"
+    assert "mission_tag" not in result
     assert result["harness"].exists()
     assert (result["harness"] / "_project_dir").read_text(encoding="utf-8") == str(tmp_path.resolve())
     assert (result["harness"] / "_gate_mode").read_text(encoding="utf-8") == "auto"
@@ -685,7 +688,7 @@ def test_check_signals_gate(tmp_path, reset_blocked, monkeypatch):
     assert ms.gate == "manual"
 
 
-def test_check_signals_non_signal_requeued(tmp_path, reset_blocked, monkeypatch):
+def test_check_signals_discards_stale_interaction_command(tmp_path, reset_blocked, monkeypatch):
     monkeypatch.setattr("src.mission.signals.notify", lambda msg: None)
     requeued = []
 
@@ -711,11 +714,10 @@ def test_check_signals_non_signal_requeued(tmp_path, reset_blocked, monkeypatch)
     fq = FakeQueue()
     blocked = BlockState()
     assert check_signals(fq, harness, None, blocked) is True
-    assert len(requeued) == 1
-    assert requeued[0]["cmd"] == "approve"
+    assert requeued == []
 
 
-def test_check_signals_pause_defers_non_pause_commands(tmp_path, reset_blocked, monkeypatch):
+def test_check_signals_pause_discards_non_pause_commands(tmp_path, reset_blocked, monkeypatch):
     monkeypatch.setattr("src.mission.signals.notify", lambda msg: None)
 
     class RequeueingQueue:
@@ -749,7 +751,7 @@ def test_check_signals_pause_defers_non_pause_commands(tmp_path, reset_blocked, 
     cq = RequeueingQueue()
     blocked = BlockState()
     assert check_signals(cq, harness, None, blocked) is True
-    assert cq.requeued == [{"cmd": "approve"}]
+    assert cq.requeued == []
 
 
 # --- check_gate tests ---
@@ -1409,7 +1411,7 @@ def test_notify_without_telegram(monkeypatch, reset_blocked):
     assert len(send_calls) == 0
 
 
-def test_notify_truncation(monkeypatch, reset_blocked):
+def test_notify_delegates_chunking_to_transport(monkeypatch, reset_blocked):
     import src.integrations.notifier as notifier_mod
     import src.core.notification as notification_mod
     monkeypatch.setattr(notification_mod, "_notify_backend", notifier_mod.notify)
@@ -1423,7 +1425,7 @@ def test_notify_truncation(monkeypatch, reset_blocked):
     long_msg = "x" * 5000
     notify(long_msg)
     assert len(captured) == 1
-    assert len(captured[0]) <= 4000
+    assert captured[0] == long_msg
 
 
 # --- 2.4: notify_result tests ---
@@ -1479,7 +1481,6 @@ def _mock_orchestration(monkeypatch, harness):
     monkeypatch.setattr("src.core.git.ensure_develop", lambda: "existing")
     monkeypatch.setattr("src.core.git.setup_git", lambda b: "existing")
     monkeypatch.setattr(mission, "_create_client", lambda: MagicMock())
-    monkeypatch.setattr("src.harness.registry.register_mission", lambda t, h, p: None)
     monkeypatch.setattr(mission_runner_mod, "notify", lambda msg: None)
     monkeypatch.setattr(hitl_mod, "notify", lambda msg: None)
     monkeypatch.setattr(PhaseRunner, "run", lambda *a, **kw: None)
@@ -1495,18 +1496,17 @@ def _mock_orchestration(monkeypatch, harness):
     monkeypatch.setattr(mission_runner_mod, "_update_task", lambda *a, **kw: None)
     monkeypatch.setattr(mission_runner_mod, "_task_summary", lambda *a, **kw: "")
     monkeypatch.setattr(mission_runner_mod, "stage_task_files", lambda *a, **kw: None)
-    monkeypatch.setattr("src.mission.human_input._start_stdin_listener", lambda q: None)
+    monkeypatch.setattr("src.mission.human_input._start_stdin_listener", lambda q, state: None)
     monkeypatch.delenv("TELEGRAM_TOKEN", raising=False)
     monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
 
 
-def test_main_sets_proc_state(tmp_path, monkeypatch, reset_blocked, save_env):
-    """main() sets MissionProcess notify_prefix and mission_tag from harness_info."""
+def test_main_sets_notification_prefix(tmp_path, monkeypatch, reset_blocked, save_env):
+    """main() derives the notification prefix from the current project."""
     harness = tmp_path / "harness"
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "test-proj_feat-x_12345",
         "project_name": "test-proj",
         "branch_safe": "feat-x",
     }
@@ -1537,7 +1537,6 @@ def test_main_sets_proc_state(tmp_path, monkeypatch, reset_blocked, save_env):
 
     expected_prefix = compute_notify_prefix("test-proj")
     assert proc.notify_prefix == expected_prefix
-    assert proc.mission_tag == "test-proj_feat-x_12345"
 
 
 def test_main_registers_atexit(tmp_path, monkeypatch, reset_blocked, save_env):
@@ -1546,7 +1545,6 @@ def test_main_registers_atexit(tmp_path, monkeypatch, reset_blocked, save_env):
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "tag",
         "project_name": "proj",
         "branch_safe": "br",
     }
@@ -1589,7 +1587,6 @@ def test_main_registers_signals(tmp_path, monkeypatch, reset_blocked, save_env):
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "tag",
         "project_name": "proj",
         "branch_safe": "br",
     }
@@ -1629,6 +1626,104 @@ def test_main_registers_signals(tmp_path, monkeypatch, reset_blocked, save_env):
         assert handler == proc.signal_handler
 
 
+def test_telegram_config_requires_token_and_chat_together(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    with pytest.raises(SystemExit) as exc:
+        mission._telegram_config()
+
+    assert exc.value.code == 2
+
+
+def test_telegram_config_requires_private_chat_id(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "-100123")
+
+    with pytest.raises(SystemExit) as exc:
+        mission._telegram_config()
+
+    assert exc.value.code == 2
+
+
+def test_main_continues_without_telegram_when_token_is_owned(
+    tmp_path, monkeypatch, reset_blocked, save_env, capsys,
+):
+    harness = tmp_path / "harness"
+    fake_info = {
+        "harness": harness,
+        "harness_win": str(harness),
+        "project_name": "proj",
+        "branch_safe": "br",
+    }
+    ns = argparse.Namespace(
+        task="t", branch="b", mode="full", no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    monkeypatch.setattr("src.harness.harness_utils.setup_harness", lambda b, g, **kw: fake_info)
+    _mock_orchestration(monkeypatch, harness)
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+    owner = MagicMock()
+    owner.acquire.return_value = False
+    monkeypatch.setattr(mission, "TelegramLock", lambda token: owner)
+    start = MagicMock()
+    monkeypatch.setattr(mission._telegram_listener, "start_listener", start)
+    monkeypatch.setattr(mission, "atexit", MagicMock())
+    monkeypatch.setattr(mission, "signal", MagicMock())
+
+    proc = mission.main()
+
+    assert proc.telegram_handle is None
+    assert proc.telegram_lock is None
+    start.assert_not_called()
+    assert "already owned by another mission" in capsys.readouterr().err
+
+
+def test_main_owns_one_bot_and_cleans_up_listener(
+    tmp_path, monkeypatch, reset_blocked, save_env,
+):
+    harness = tmp_path / "harness"
+    fake_info = {
+        "harness": harness,
+        "harness_win": str(harness),
+        "project_name": "proj",
+        "branch_safe": "br",
+    }
+    ns = argparse.Namespace(
+        task="t", branch="b", mode="full", no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    monkeypatch.setattr("src.harness.harness_utils.setup_harness", lambda b, g, **kw: fake_info)
+    _mock_orchestration(monkeypatch, harness)
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "123")
+    owner = MagicMock()
+    owner.acquire.return_value = True
+    handle = MagicMock()
+    handle.stop.return_value = True
+    service = object()
+    monkeypatch.setattr(mission, "TelegramLock", lambda token: owner)
+    monkeypatch.setattr(mission, "CodeQuestionService", lambda *a, **kw: service)
+    start = MagicMock(return_value=handle)
+    monkeypatch.setattr(mission._telegram_listener, "start_listener", start)
+    monkeypatch.setattr(mission, "atexit", MagicMock())
+    monkeypatch.setattr(mission, "signal", MagicMock())
+
+    proc = mission.main()
+
+    start.assert_called_once()
+    assert start.call_args.kwargs["harness"] == harness
+    assert start.call_args.kwargs["question_service"] is service
+    handle.stop.assert_called_once_with()
+    owner.release.assert_called_once_with()
+    assert proc.cleanup_done is True
+
+
 # --- 2.2: consolidation integration tests ---
 
 
@@ -1638,7 +1733,6 @@ def test_main_consolidates_when_over_limit(tmp_path, monkeypatch, reset_blocked,
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "tag",
         "project_name": "proj",
         "branch_safe": "br",
     }
@@ -1683,7 +1777,6 @@ def test_main_skips_consolidation_on_resume(tmp_path, monkeypatch, reset_blocked
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "tag",
         "project_name": "proj",
         "branch_safe": "br",
     }
@@ -1724,7 +1817,6 @@ def test_main_no_consolidation_under_limit(tmp_path, monkeypatch, reset_blocked,
     fake_info = {
         "harness": harness,
         "harness_win": str(harness),
-        "mission_tag": "tag",
         "project_name": "proj",
         "branch_safe": "br",
     }
@@ -1762,69 +1854,78 @@ def test_main_no_consolidation_under_limit(tmp_path, monkeypatch, reset_blocked,
 
 
 def test_cleanup_happy(monkeypatch):
-    """cleanup() unregisters mission and sets cleanup_done."""
+    """cleanup() stops the listener before releasing bot ownership."""
     proc = mission.MissionProcess()
-    proc.mission_tag = "test-tag"
-
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
-
-    printed = []
-    monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a))
+    handle = MagicMock()
+    handle.stop.return_value = True
+    lock = MagicMock()
+    proc.telegram_handle = handle
+    proc.telegram_lock = lock
 
     proc.cleanup()
 
-    assert len(unreg_calls) == 1
-    assert unreg_calls[0] == "test-tag"
+    handle.stop.assert_called_once_with()
+    lock.release.assert_called_once_with()
     assert proc.cleanup_done is True
+    assert proc.telegram_handle is None
+    assert proc.telegram_lock is None
+
+
+def test_cleanup_retains_lock_when_listener_does_not_stop(monkeypatch):
+    """A live listener must keep exclusive ownership of its bot token."""
+    proc = mission.MissionProcess()
+    handle = MagicMock()
+    handle.stop.return_value = False
+    lock = MagicMock()
+    proc.telegram_handle = handle
+    proc.telegram_lock = lock
+    monkeypatch.setattr("builtins.print", lambda *a, **kw: None)
+
+    proc.cleanup()
+
+    handle.stop.assert_called_once_with()
+    lock.release.assert_not_called()
+    assert proc.telegram_handle is handle
+    assert proc.telegram_lock is lock
 
 
 def test_cleanup_idempotent(monkeypatch):
-    """Calling cleanup() twice only unregisters once."""
+    """Calling cleanup() twice stops and releases only once."""
     proc = mission.MissionProcess()
-    proc.mission_tag = "test-tag"
-
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
-
-    printed = []
-    monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a))
+    handle = MagicMock()
+    handle.stop.return_value = True
+    lock = MagicMock()
+    proc.telegram_handle = handle
+    proc.telegram_lock = lock
 
     proc.cleanup()
     proc.cleanup()
 
-    assert len(unreg_calls) == 1
+    handle.stop.assert_called_once_with()
+    lock.release.assert_called_once_with()
 
 
-def test_cleanup_empty_tag(monkeypatch):
-    """cleanup() no-ops when mission_tag is empty."""
+def test_cleanup_without_telegram_marks_done():
     proc = mission.MissionProcess()
 
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
-
     proc.cleanup()
 
-    assert len(unreg_calls) == 0
-    assert proc.cleanup_done is False
+    assert proc.cleanup_done is True
 
 
 def test_cleanup_already_done(monkeypatch):
     """cleanup() no-ops when cleanup_done is True."""
     proc = mission.MissionProcess()
-    proc.mission_tag = "tag"
+    handle = MagicMock()
+    lock = MagicMock()
+    proc.telegram_handle = handle
+    proc.telegram_lock = lock
     proc.cleanup_done = True
-
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
 
     proc.cleanup()
 
-    assert len(unreg_calls) == 0
+    handle.stop.assert_not_called()
+    lock.release.assert_not_called()
 
 
 # --- 2.5: signal_handler tests ---
@@ -1834,13 +1935,10 @@ def test_signal_handler_sigterm(monkeypatch, reset_blocked):
     """signal_handler(SIGTERM) sets blocked, calls cleanup, exits."""
     import signal as real_signal
     proc = mission.MissionProcess()
-    proc.mission_tag = "tag"
     blocked = BlockState()
     proc.blocked = blocked
-
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
+    lock = MagicMock()
+    proc.telegram_lock = lock
 
     printed = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a))
@@ -1851,20 +1949,18 @@ def test_signal_handler_sigterm(monkeypatch, reset_blocked):
     assert exc.value.code == 1
     assert blocked.value == "signal_SIGTERM"
     assert proc.cleanup_done is True
-    assert len(unreg_calls) == 1
+    lock.release.assert_called_once_with()
 
 
 def test_signal_handler_sigint(monkeypatch, reset_blocked):
     """signal_handler(SIGINT) sets blocked to signal_SIGINT."""
     import signal as real_signal
     proc = mission.MissionProcess()
-    proc.mission_tag = "tag"
     blocked = BlockState()
     proc.blocked = blocked
-
-    unreg_calls = []
-    monkeypatch.setattr("src.harness.registry.unregister_mission", lambda t: unreg_calls.append(t))
-    monkeypatch.setattr("src.harness.registry.list_missions", lambda: [])
+    handle = MagicMock()
+    handle.stop.return_value = True
+    proc.telegram_handle = handle
 
     printed = []
     monkeypatch.setattr("builtins.print", lambda *a, **kw: printed.append(a))
@@ -1875,6 +1971,7 @@ def test_signal_handler_sigint(monkeypatch, reset_blocked):
     assert exc.value.code == 1
     assert blocked.value == "signal_SIGINT"
     assert proc.cleanup_done is True
+    handle.stop.assert_called_once_with()
 
 
 # --- ensure_develop tests ---

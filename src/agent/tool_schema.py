@@ -10,6 +10,7 @@ from src.agent.file_tools import (
 )
 from src.agent.bash_executor import BASH_SCHEMA, _tool_bash
 from src.agent.search_tools import GLOB_SCHEMA, _tool_glob, GREP_SCHEMA, _tool_grep
+from src.agent.code_graph_tool import CODE_GRAPH_SCHEMA, _tool_code_graph
 
 
 @dataclass
@@ -25,6 +26,7 @@ TOOL_REGISTRY: dict[str, ToolDef] = {
     "Bash": ToolDef(schema=BASH_SCHEMA, handler=_tool_bash),
     "Glob": ToolDef(schema=GLOB_SCHEMA, handler=_tool_glob),
     "Grep": ToolDef(schema=GREP_SCHEMA, handler=_tool_grep),
+    "CodeGraph": ToolDef(schema=CODE_GRAPH_SCHEMA, handler=_tool_code_graph),
 }
 
 TOOL_DEFINITIONS: list[dict] = [td.schema for td in TOOL_REGISTRY.values()]

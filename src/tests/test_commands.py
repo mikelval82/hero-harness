@@ -10,7 +10,7 @@ from src.mission.human_input import (
     HumanInput, _handle_gate, _handle_retry, _parse_stdin_line,
     _start_stdin_listener,
 )
-from src.agent.loop import DONE_SIGNAL
+from src.agent.loop import ABORT_SIGNAL, DONE_SIGNAL
 from src.core.block_state import BlockState
 
 
@@ -34,11 +34,11 @@ def test_handle_gate_off():
 
 
 def test_handle_gate_invalid():
-    assert _handle_gate("/gate banana") is None
+    assert _handle_gate("/gate banana") == {"cmd": "gate", "text": "banana"}
 
 
 def test_handle_gate_no_arg():
-    assert _handle_gate("/gate") is None
+    assert _handle_gate("/gate") == {"cmd": "gate", "text": ""}
 
 
 # --- _parse_stdin_line ---
@@ -48,9 +48,9 @@ def test_parse_stdin_line_whitespace_only():
     assert _parse_stdin_line("  \t  ") is None
 
 
-def test_parse_stdin_line_unknown_slash_treated_as_answer():
+def test_parse_stdin_line_unknown_slash_remains_a_command():
     result = _parse_stdin_line("/unknown")
-    assert result == {"cmd": "answer", "text": "/unknown"}
+    assert result == {"cmd": "unknown", "text": ""}
 
 
 # --- update_state ---
@@ -93,7 +93,7 @@ def test_apply_gate_change_with_mission_state(tmp_path):
 # --- check_signals ---
 
 
-def test_check_signals_unknown_command_requeued(tmp_path, monkeypatch):
+def test_check_signals_unknown_command_discarded(tmp_path, monkeypatch):
     monkeypatch.setattr("src.core.notification._notify_backend", lambda msg, **kw: None)
     requeued = []
 
@@ -118,8 +118,7 @@ def test_check_signals_unknown_command_requeued(tmp_path, monkeypatch):
     blocked = BlockState()
     result = check_signals(FakeQueue(), tmp_path, ms, blocked)
     assert result is True
-    assert len(requeued) == 1
-    assert requeued[0]["cmd"] == "some_future_cmd"
+    assert requeued == []
 
 
 def test_check_signals_unknown_command_is_not_reprocessed_same_tick(tmp_path, monkeypatch):
@@ -152,7 +151,7 @@ def test_check_signals_unknown_command_is_not_reprocessed_same_tick(tmp_path, mo
     result = check_signals(cq, tmp_path, ms, blocked)
     assert result is True
     assert cq.gets == 2
-    assert cq.requeued == [{"cmd": "approve"}]
+    assert cq.requeued == []
 
 
 def test_check_signals_gate_during_pause(tmp_path, monkeypatch):
@@ -234,11 +233,11 @@ def test_human_input_abort():
     hi = HumanInput(cq, blocked)
     cq.put({"cmd": "abort"})
     result = hi("Continue?")
-    assert result == DONE_SIGNAL
+    assert result == ABORT_SIGNAL
     assert blocked.value == "user_abort"
 
 
-def test_human_input_skips_non_answer_commands():
+def test_human_input_discards_non_answer_commands():
     cq = queue.Queue()
     blocked = BlockState()
     hi = HumanInput(cq, blocked)
@@ -246,11 +245,10 @@ def test_human_input_skips_non_answer_commands():
     cq.put({"cmd": "answer", "text": "actual answer"})
     result = hi("Question?")
     assert result == "actual answer"
-    requeued = cq.get()
-    assert requeued["cmd"] == "gate"
+    assert cq.empty()
 
 
-def test_human_input_defers_non_answer_command_until_answer_arrives():
+def test_human_input_does_not_defer_non_answer_command():
     class DelayedAnswerQueue:
         def __init__(self):
             self._items = [{"cmd": "gate", "mode": "manual"}]
@@ -280,7 +278,7 @@ def test_human_input_defers_non_answer_command_until_answer_arrives():
     result = hi("Question?")
     assert result == "actual answer"
     assert cq.gets == 2
-    assert cq.requeued == [{"cmd": "gate", "mode": "manual"}]
+    assert cq.requeued == []
 
 
 def test_human_input_with_log():

@@ -6,7 +6,14 @@ from typing import TYPE_CHECKING, Callable
 
 from src.core.block_state import BlockKind, BlockReason, BlockState
 from src.core.notification import notify
-from src.core.state import update_state, _apply_gate_change, MissionStateProtocol
+from src.core.state import (
+    ControlState,
+    Interaction,
+    InteractionKind,
+    MissionStateProtocol,
+    _apply_gate_change,
+    update_state,
+)
 from src.core.context import PHASE_REGISTRY, PhaseName, MissionContext
 from src.harness.tasks import (
     update_task as _update_task,
@@ -14,6 +21,8 @@ from src.harness.tasks import (
     stage_task_files,
 )
 from src.harness.telemetry import write_intervention
+from src.mission.control import CommandEnvelope, coerce_envelope
+from src.mission.signals import control_checkpoint
 
 if TYPE_CHECKING:
     from src.mission.phase_runner import PhaseRunner
@@ -25,7 +34,7 @@ class HitlReviewer:
         self,
         ctx: MissionContext,
         phase_runner: PhaseRunner,
-        command_queue: queue.Queue[dict],
+        command_queue: queue.Queue,
         mission_state: MissionStateProtocol,
         blocked: BlockState,
         log: Callable[[str], None],
@@ -50,16 +59,16 @@ class HitlReviewer:
         if verdict == "APPROVED":
             gate_file = harness / "_gate_mode"
             gate = gate_file.read_text(encoding="utf-8").strip() if gate_file.is_file() else "auto"
-            if gate == "manual":
-                ok = self.wait_approval(task_id, task_title)
-                if not ok:
-                    return
+            if gate == "manual" and not self.wait_approval(task_id, task_title):
+                return
             print(f"Task {task_id} APPROVED")
-            notify(f"✅ Task {task_id} APPROVED")
+            notify(f"\u2705 Task {task_id} APPROVED")
             stage_task_files(harness)
             _update_task(index, "completed", harness)
             self.compact_fn(task_id=task_id, task_title=task_title)
-        elif verdict == "MINOR_CHANGES":
+            return
+
+        if verdict == "MINOR_CHANGES":
             print(f"Task {task_id} MINOR_CHANGES — running fast-path reimplement...")
             notify(f"\U0001f527 Task {task_id} MINOR_CHANGES — fast-path reimplement")
             retry_count = self._increment_retry(task_id)
@@ -76,26 +85,41 @@ class HitlReviewer:
                 _update_task(index, "failed", harness, reason=self.blocked.value)
                 return
             print(f"Task {task_id} APPROVED after fast-path reimplement")
-            notify(f"✅ Task {task_id} APPROVED after fast-path")
+            notify(f"\u2705 Task {task_id} APPROVED after fast-path")
             stage_task_files(harness)
             _update_task(index, "completed", harness)
             self.compact_fn(task_id=task_id, task_title=task_title)
-        else:
-            self.hitl_review_loop(index, task_id, task_title)
+            return
 
-    def run_reimplement(self, task_id: str, task_title: str, user_feedback: str) -> None:
-        if user_feedback:
-            feedback_block = f"Additional feedback from the user: {user_feedback}"
-        else:
-            feedback_block = "No additional user feedback. Focus on the reviewer's audit."
+        self.hitl_review_loop(index, task_id, task_title)
+
+    def run_reimplement(self, task_id: str, task_title: str, user_feedback: str) -> bool:
+        feedback_block = (
+            f"Additional feedback from the user: {user_feedback}"
+            if user_feedback
+            else "No additional user feedback. Focus on the reviewer's audit."
+        )
+        self._set_phase(PhaseName.REIMPLEMENT, task_id, task_title)
         self.phase_runner.run(
             PHASE_REGISTRY[PhaseName.REIMPLEMENT],
             {**self._task_variables(task_id, task_title), "USER_FEEDBACK": feedback_block},
-            phase_name_override=f"reimplement[{task_id}]", log=self.log)
+            phase_name_override=f"reimplement[{task_id}]",
+            log=self.log,
+        )
+        return self._checkpoint()
 
     def wait_approval(self, task_id: str, task_title: str) -> bool:
-        harness = self.ctx.harness
-        verdict = _audit_verdict(harness)
+        verdict = _audit_verdict(self.ctx.harness)
+        prompt = (
+            f"Approve task {task_id} — {task_title}? "
+            f"Reviewer verdict: {verdict}. Reply /approve or /reject [reason]."
+        )
+        self._set_phase("waiting_approval", task_id, task_title)
+        interaction = self.mission_state.open_interaction(
+            InteractionKind.APPROVAL,
+            task_id=task_id,
+            prompt=prompt,
+        )
         self._write_intervention(
             "waiting_approval",
             task_id,
@@ -103,69 +127,50 @@ class HitlReviewer:
             source="system",
             verdict=verdict,
         )
-        self.mission_state.waiting_approval = {
-            "task_id": task_id,
-            "task_title": task_title,
-            "verdict": verdict,
-        }
-        self.mission_state.waiting_notified = False
-        notify(f"⏳ Waiting for approval: {task_id} — {task_title} (reviewer: {verdict}). Reply /approve or /reject")
-        update_state("waiting_approval", harness, self.mission_state)
-
-        while True:
-            try:
-                cmd = self.command_queue.get(timeout=5)
-            except queue.Empty:
-                continue
-            action = cmd.get("cmd", "")
-            if action == "approve":
-                self._write_intervention("approve", task_id, task_title, verdict=verdict)
-                self.mission_state.waiting_approval = None
-                self.mission_state.waiting_notified = False
-                return True
-            elif action == "reject":
-                reason = cmd.get("reason", "")
-                self._write_intervention("reject", task_id, task_title, verdict=verdict, feedback=reason)
-                self.mission_state.waiting_approval = None
-                self.mission_state.waiting_notified = False
-                self.blocked.reason = BlockReason(BlockKind.USER_REJECTED, phase=task_id, detail=reason)
-                notify(f"❌ Task {task_id} REJECTED by user{' — ' + reason if reason else ''}")
-                return False
-            elif action == "abort":
-                self._write_intervention("abort", task_id, task_title, verdict=verdict)
-                self.mission_state.waiting_approval = None
-                self.mission_state.waiting_notified = False
-                self.blocked.reason = BlockReason(BlockKind.USER_ABORT)
-                return False
-            elif action == "pause":
-                self._write_intervention("pause", task_id, task_title, verdict=verdict)
-                if not self._wait_pause_resume():
-                    self.mission_state.waiting_approval = None
-                    self.mission_state.waiting_notified = False
-                    self.blocked.reason = BlockReason(BlockKind.USER_ABORT)
+        print(f"HITL: {prompt}")
+        try:
+            while True:
+                cmd = self._next_interaction_command(interaction, {"approve", "reject"})
+                if cmd.name == "approve":
+                    self._write_intervention("approve", task_id, task_title, verdict=verdict)
+                    return True
+                if cmd.name == "reject":
+                    reason = cmd.get("reason", "")
+                    self._write_intervention(
+                        "reject",
+                        task_id,
+                        task_title,
+                        verdict=verdict,
+                        feedback=reason,
+                    )
+                    self.blocked.reason = BlockReason(
+                        BlockKind.USER_REJECTED,
+                        phase=task_id,
+                        detail=reason,
+                    )
+                    notify(f"\u274c Task {task_id} REJECTED by user" + (f" — {reason}" if reason else ""))
                     return False
-            elif action == "gate":
-                self._write_intervention("gate_change", task_id, task_title, verdict=verdict, feedback=cmd["mode"])
-                _apply_gate_change(cmd["mode"], harness, self.mission_state)
-
-    def _wait_pause_resume(self) -> bool:
-        while True:
-            try:
-                cmd = self.command_queue.get(timeout=5)
-            except queue.Empty:
-                continue
-            action = cmd.get("cmd", "")
-            if action == "resume":
-                return True
-            if action == "abort":
-                return False
-            if action == "gate":
-                _apply_gate_change(cmd["mode"], self.ctx.harness, self.mission_state)
+                if cmd.name == "abort":
+                    self._write_intervention("abort", task_id, task_title, verdict=verdict)
+                    self._abort()
+                    return False
+        finally:
+            self.mission_state.close_interaction(interaction.id)
 
     def hitl_review_loop(self, index: int, task_id: str, task_title: str) -> None:
         harness = self.ctx.harness
         while True:
             verdict = _audit_verdict(harness)
+            prompt = (
+                f"Task {task_id} — {task_title}: reviewer returned {verdict}. "
+                "Reply /retry [feedback], /skip, or /approve to force approval."
+            )
+            self._set_phase("waiting_review_decision", task_id, task_title)
+            interaction = self.mission_state.open_interaction(
+                InteractionKind.REVIEW_DECISION,
+                task_id=task_id,
+                prompt=prompt,
+            )
             self._write_intervention(
                 "waiting_review_decision",
                 task_id,
@@ -173,38 +178,24 @@ class HitlReviewer:
                 source="system",
                 verdict=verdict,
             )
-            self.mission_state.waiting_approval = {
-                "task_id": task_id,
-                "task_title": task_title,
-                "verdict": verdict,
-            }
-            self.mission_state.waiting_notified = False
-            update_state("waiting_review_decision", harness, self.mission_state)
-            print(f"HITL: waiting for user decision on {task_id} (reviewer: {verdict})...")
+            print(f"HITL: {prompt}")
+            try:
+                cmd = self._next_interaction_command(
+                    interaction,
+                    {"retry", "skip", "approve"},
+                )
+            finally:
+                self.mission_state.close_interaction(interaction.id)
 
-            decision = None
-            cmd_data = None
-            while decision is None:
-                try:
-                    cmd = self.command_queue.get(timeout=5)
-                except queue.Empty:
-                    continue
-                action = cmd.get("cmd", "")
-                if action in ("retry", "skip", "approve", "abort"):
-                    decision = action
-                    cmd_data = cmd
-                elif action == "pause":
-                    if not self._wait_pause_resume():
-                        decision = "abort"
-                        break
-                elif action == "gate":
-                    _apply_gate_change(cmd["mode"], harness, self.mission_state)
-
-            self.mission_state.waiting_approval = None
-            self.mission_state.waiting_notified = False
+            decision = cmd.name
+            if decision == "abort":
+                self._write_intervention("abort", task_id, task_title, verdict=verdict)
+                self._abort()
+                _update_task(index, "failed", harness, reason="user_abort")
+                return
 
             if decision == "retry":
-                feedback = cmd_data.get("feedback", "")
+                feedback = cmd.get("feedback", "")
                 retry_count = self._increment_retry(task_id)
                 self._write_intervention(
                     "retry",
@@ -214,28 +205,32 @@ class HitlReviewer:
                     feedback=feedback,
                     retry_count=retry_count,
                 )
-                print(f"HITL: user chose RETRY{' — feedback: ' + feedback if feedback else ''}")
+                print(f"HITL: user chose RETRY" + (f" — feedback: {feedback}" if feedback else ""))
                 notify(f"\U0001f504 Retrying task {task_id}...")
-                self.run_reimplement(task_id, task_title, feedback)
-                if self.blocked.reason:
+                if not self.run_reimplement(task_id, task_title, feedback) or self.blocked.reason:
                     _update_task(index, "failed", harness, reason=self.blocked.value)
                     return
+
+                self._set_phase(PhaseName.REVIEW, task_id, task_title)
                 self.phase_runner.run(
                     PHASE_REGISTRY[PhaseName.REVIEW],
                     self._task_variables(task_id, task_title),
-                    phase_name_override=f"review[{task_id}]", log=self.log)
-                if self.blocked.reason:
+                    phase_name_override=f"review[{task_id}]",
+                    log=self.log,
+                )
+                if not self._checkpoint() or self.blocked.reason:
                     _update_task(index, "failed", harness, reason=self.blocked.value)
                     return
+
                 new_verdict = _audit_verdict(harness)
                 if new_verdict == "APPROVED":
                     print(f"Task {task_id} APPROVED after retry")
-                    notify(f"✅ Task {task_id} APPROVED after retry")
+                    notify(f"\u2705 Task {task_id} APPROVED after retry")
                     stage_task_files(harness)
                     _update_task(index, "completed", harness)
                     self.compact_fn(task_id=task_id, task_title=task_title)
                     return
-                elif new_verdict == "MINOR_CHANGES":
+                if new_verdict == "MINOR_CHANGES":
                     print(f"Task {task_id} MINOR_CHANGES after retry — fast-path reimplement...")
                     notify(f"\U0001f527 Task {task_id} MINOR_CHANGES — fast-path reimplement")
                     retry_count = self._increment_retry(task_id)
@@ -247,39 +242,84 @@ class HitlReviewer:
                         verdict=new_verdict,
                         retry_count=retry_count,
                     )
-                    self.run_reimplement(task_id, task_title, "")
-                    if self.blocked.reason:
+                    if not self.run_reimplement(task_id, task_title, "") or self.blocked.reason:
                         _update_task(index, "failed", harness, reason=self.blocked.value)
                         return
                     print(f"Task {task_id} APPROVED after fast-path reimplement")
-                    notify(f"✅ Task {task_id} APPROVED after fast-path")
+                    notify(f"\u2705 Task {task_id} APPROVED after fast-path")
                     stage_task_files(harness)
                     _update_task(index, "completed", harness)
                     self.compact_fn(task_id=task_id, task_title=task_title)
                     return
                 print("HITL: still CHANGES_REQUESTED after retry, asking user again...")
+                continue
 
-            elif decision == "skip":
+            if decision == "skip":
                 self._write_intervention("skip", task_id, task_title, verdict=verdict)
                 print(f"HITL: user chose SKIP for {task_id}")
-                notify(f"⏭️ Task {task_id} skipped by user")
+                notify(f"\u23ed\ufe0f Task {task_id} skipped by user")
                 _update_task(index, "failed", harness)
                 return
 
-            elif decision == "approve":
+            if decision == "approve":
                 self._write_intervention("force_approve", task_id, task_title, verdict=verdict)
                 print(f"Task {task_id} force-approved by user despite {verdict}")
-                notify(f"✅ Task {task_id} force-approved by user")
+                notify(f"\u2705 Task {task_id} force-approved by user")
                 stage_task_files(harness)
                 _update_task(index, "completed", harness)
                 self.compact_fn(task_id=task_id, task_title=task_title)
                 return
 
-            elif decision == "abort":
-                self._write_intervention("abort", task_id, task_title, verdict=verdict)
-                self.blocked.reason = BlockReason(BlockKind.USER_ABORT)
-                _update_task(index, "failed", harness, reason="user_abort")
-                return
+    def _next_interaction_command(
+        self,
+        interaction: Interaction,
+        allowed: set[str],
+    ) -> CommandEnvelope:
+        while True:
+            if self.mission_state.control_state == ControlState.ABORT_PENDING:
+                return CommandEnvelope("abort", source="state")
+            try:
+                raw = self.command_queue.get(timeout=5)
+            except queue.Empty:
+                continue
+            cmd = coerce_envelope(raw)
+            if cmd.name == "abort":
+                return cmd
+            if cmd.name == "gate" and cmd.get("mode") in {"manual", "auto"}:
+                _apply_gate_change(cmd["mode"], self.ctx.harness, self.mission_state)
+                continue
+            if cmd.name not in allowed:
+                continue
+            if not self.mission_state.interaction_accepts(cmd.interaction_id, cmd.update_id):
+                continue
+            return cmd
+
+    def _checkpoint(self) -> bool:
+        return control_checkpoint(
+            self.command_queue,
+            self.ctx.harness,
+            self.mission_state,
+            self.blocked,
+        )
+
+    def _abort(self) -> None:
+        self.blocked.reason = BlockReason(BlockKind.USER_ABORT)
+        self.mission_state.set_control_state(ControlState.ABORTED)
+
+    def _set_phase(self, phase: str, task_id: str, task_title: str) -> None:
+        snapshot = self.mission_state.snapshot()
+        update_state(
+            phase,
+            self.ctx.harness,
+            self.mission_state,
+            task_id=task_id,
+            task_title=task_title,
+            task_num=snapshot["task_num"],
+            task_count=snapshot["task_count"],
+            completed=snapshot["completed"],
+            mode=snapshot["mode"],
+            gate=snapshot["gate"],
+        )
 
     def _task_variables(self, task_id: str, task_title: str) -> dict[str, str]:
         task = {"id": task_id, "title": task_title}

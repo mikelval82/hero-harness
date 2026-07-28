@@ -297,7 +297,6 @@ class MissionContext:
     resume: bool = False
 
     notify_prefix: str = ""
-    mission_tag: str = ""
     project_name: str = ""
 
     def get_mission_pipeline(self) -> dict[str, list[str]]:

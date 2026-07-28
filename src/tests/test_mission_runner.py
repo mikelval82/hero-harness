@@ -6,19 +6,22 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.core.block_state import BlockState, BlockKind, BlockReason
-from src.core.context import MissionContext, PHASE_REGISTRY
+from src.core.context import MissionContext, PHASE_REGISTRY, PhaseName
 from src.mission.runner import MissionRunner, create_runner
 from src.mission.burst_runner import BurstRunner
 from src.mission.hitl import HitlReviewer
 from src.mission.phase_runner import PhaseRunner
+from src.mission.human_input import HumanInput
 from src.agent.loop import PhaseResult, PhaseTimeout, MaxTurnsExceeded, MaxRetriesExceeded
 from src.harness.case_base import HARNESS_CASES_PATH_FILE, read_cases
 from src.harness.skill_library import HARNESS_GENERATED_SKILLS_DIR, HARNESS_SKILLS_PATH_FILE, read_skill_index
 from src.harness.telemetry import read_events
-from src.integrations.telegram_listener import MissionState
+from src.core.state import ControlState, MissionState
+from src.mission.control import CommandRouter
 import src.mission.runner as runner_mod
 import src.mission.burst_runner as burst_mod
 import src.mission.hitl as hitl_mod
+import src.mission.phase_runner as phase_runner_mod
 
 
 def _make_ctx(tmp_path, **overrides):
@@ -55,6 +58,21 @@ def _make_runner(tmp_path, monkeypatch, ctx=None, blocked=None):
     cq = queue.Queue()
     runner = create_runner(MagicMock(), ctx, cq, ms, lambda m: None, blocked)
     return runner
+
+
+def _route_on_next_interaction(runner, *commands):
+    """Route commands only after the tested code opens its interaction."""
+    original = runner.mission_state.open_interaction
+
+    def open_interaction(kind, *, task_id="", prompt=""):
+        interaction = original(kind, task_id=task_id, prompt=prompt)
+        router = CommandRouter(runner.mission_state, runner.command_queue)
+        for name, args in commands:
+            outcome = router.route(name, args, source="stdin")
+            assert outcome.accepted, outcome.message
+        return interaction
+
+    runner.mission_state.open_interaction = open_interaction
 
 
 def test_generate_report_syncs_project_memory(tmp_path, monkeypatch):
@@ -152,6 +170,90 @@ Use when report output should promote a verified procedure.
     assert (skills_dir / "runner-sync-skill.md").is_file()
     assert any(record["skill_id"] == "runner-sync-skill" for record in records)
     assert "Verified skills synced: 1" in logs
+
+
+def test_grill_abort_preserves_user_abort_and_skips_gate(tmp_path, monkeypatch):
+    ctx = _make_ctx(tmp_path)
+    blocked = BlockState()
+    state = MissionState()
+    commands = queue.Queue()
+    commands.put({"cmd": "abort"})
+    client = MagicMock()
+    text_block = MagicMock(type="text", text="Need one clarification")
+    response = MagicMock(
+        stop_reason="end_turn",
+        content=[text_block],
+    )
+    response.usage.input_tokens = 10
+    response.usage.output_tokens = 5
+    client.messages.create.return_value = response
+
+    monkeypatch.setattr(phase_runner_mod, "render_prompt", lambda *a, **kw: "prompt")
+    monkeypatch.setattr(phase_runner_mod, "load_agent_system", lambda *a, **kw: "system")
+    monkeypatch.setattr(phase_runner_mod, "make_tool_callback", lambda *a, **kw: None)
+    monkeypatch.setattr(phase_runner_mod, "_write_metric", lambda *a, **kw: None)
+    gate = MagicMock(return_value=(False, "brief incomplete"))
+    monkeypatch.setattr(phase_runner_mod, "check_gate", gate)
+
+    phase_runner = PhaseRunner(client, ctx, blocked)
+    human_input = HumanInput(
+        commands,
+        blocked,
+        mission_state=state,
+        harness=ctx.harness,
+    )
+
+    result = phase_runner.run_conversation(
+        PHASE_REGISTRY[PhaseName.GRILL],
+        {"TASK": "test task"},
+        human_input,
+    )
+
+    assert result is None
+    assert blocked.value == "user_abort"
+    assert state.control_state.value == "aborted"
+    assert client.messages.create.call_count == 1
+    gate.assert_not_called()
+
+
+def test_finalize_without_merge_checks_abort_before_report(tmp_path, monkeypatch):
+    ctx = _make_ctx(tmp_path, mode="spec")
+    runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
+    runner.mission_state.set_control_state(ControlState.ABORT_PENDING)
+    runner._checkpoint = MagicMock(return_value=False)
+    runner._generate_report = MagicMock()
+
+    runner._run_finalize(0)
+
+    runner._generate_report.assert_not_called()
+    assert runner.mission_state.control_state is ControlState.ABORTED
+    assert runner.blocked.value == "user_abort"
+
+
+def test_finalize_checks_abort_after_commit_before_report(tmp_path, monkeypatch):
+    ctx = _make_ctx(tmp_path, mode="full")
+    runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
+    commits = []
+    monkeypatch.setattr(runner_mod, "final_commit", lambda *args: commits.append(args))
+    runner._generate_report = MagicMock()
+    checkpoints = 0
+
+    def checkpoint():
+        nonlocal checkpoints
+        checkpoints += 1
+        if checkpoints == 1:
+            return True
+        runner.blocked.reason = BlockReason(BlockKind.USER_ABORT)
+        runner.mission_state.set_control_state(ControlState.ABORTED)
+        return False
+
+    runner._checkpoint = checkpoint
+
+    runner._run_finalize(0)
+
+    assert len(commits) == 1
+    runner._generate_report.assert_not_called()
+    assert runner.mission_state.control_state is ControlState.ABORTED
 
 
 # --- commit_task ---
@@ -261,17 +363,17 @@ def test_commit_task_approved_manual_gate_waits(tmp_path, monkeypatch):
 
 def test_wait_approval_approve(tmp_path, monkeypatch):
     runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "approve"})
+    _route_on_next_interaction(runner, ("approve", None))
     result = runner.hitl.wait_approval("T1", "Task 1")
     assert result is True
-    assert runner.mission_state.waiting_approval is None
+    assert runner.mission_state.get_interaction() is None
     events = read_events(runner.ctx.harness)
     assert [e["action"] for e in events] == ["waiting_approval", "approve"]
 
 
 def test_wait_approval_reject(tmp_path, monkeypatch):
     runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "reject", "reason": "bad code"})
+    _route_on_next_interaction(runner, ("reject", {"reason": "bad code"}))
     result = runner.hitl.wait_approval("T1", "Task 1")
     assert result is False
     assert "USER_REJECTED" in runner.blocked.value
@@ -280,7 +382,7 @@ def test_wait_approval_reject(tmp_path, monkeypatch):
 
 def test_wait_approval_reject_no_reason(tmp_path, monkeypatch):
     runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "reject"})
+    _route_on_next_interaction(runner, ("reject", None))
     result = runner.hitl.wait_approval("T1", "Task 1")
     assert result is False
     assert "USER_REJECTED" in runner.blocked.value
@@ -288,7 +390,7 @@ def test_wait_approval_reject_no_reason(tmp_path, monkeypatch):
 
 def test_wait_approval_abort(tmp_path, monkeypatch):
     runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "abort"})
+    _route_on_next_interaction(runner, ("abort", None))
     result = runner.hitl.wait_approval("T1", "Task 1")
     assert result is False
     assert runner.blocked.value == "user_abort"
@@ -297,29 +399,14 @@ def test_wait_approval_abort(tmp_path, monkeypatch):
 def test_wait_approval_gate_then_approve(tmp_path, monkeypatch):
     runner = _make_runner(tmp_path, monkeypatch)
     harness = runner.ctx.harness
-    runner.command_queue.put({"cmd": "gate", "mode": "manual"})
-    runner.command_queue.put({"cmd": "approve"})
+    _route_on_next_interaction(
+        runner,
+        ("gate", {"mode": "manual"}),
+        ("approve", None),
+    )
     result = runner.hitl.wait_approval("T1", "Task 1")
     assert result is True
     assert (harness / "_gate_mode").read_text(encoding="utf-8") == "manual"
-
-
-def test_wait_approval_pause_resume_approve(tmp_path, monkeypatch):
-    runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "pause"})
-    runner.command_queue.put({"cmd": "resume"})
-    runner.command_queue.put({"cmd": "approve"})
-    result = runner.hitl.wait_approval("T1", "Task 1")
-    assert result is True
-
-
-def test_wait_approval_pause_abort(tmp_path, monkeypatch):
-    runner = _make_runner(tmp_path, monkeypatch)
-    runner.command_queue.put({"cmd": "pause"})
-    runner.command_queue.put({"cmd": "abort"})
-    result = runner.hitl.wait_approval("T1", "Task 1")
-    assert result is False
-    assert runner.blocked.value == "user_abort"
 
 
 # --- run_reimplement ---
@@ -589,7 +676,7 @@ def test_hitl_review_loop_skip(tmp_path, monkeypatch):
     (harness / "tasks.json").write_text(json.dumps(tasks), encoding="utf-8")
 
     runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
-    runner.command_queue.put({"cmd": "skip"})
+    _route_on_next_interaction(runner, ("skip", None))
 
     runner.hitl.hitl_review_loop(0, "T1", "t")
 
@@ -608,7 +695,7 @@ def test_hitl_review_loop_force_approve(tmp_path, monkeypatch):
     monkeypatch.setattr(BurstRunner, "compact_context", lambda *a, **kw: None)
 
     runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
-    runner.command_queue.put({"cmd": "approve"})
+    _route_on_next_interaction(runner, ("approve", None))
 
     runner.hitl.hitl_review_loop(0, "T1", "t")
 
@@ -624,7 +711,7 @@ def test_hitl_review_loop_abort(tmp_path, monkeypatch):
     (harness / "tasks.json").write_text(json.dumps(tasks), encoding="utf-8")
 
     runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
-    runner.command_queue.put({"cmd": "abort"})
+    _route_on_next_interaction(runner, ("abort", None))
 
     runner.hitl.hitl_review_loop(0, "T1", "t")
 
@@ -648,10 +735,10 @@ def test_hitl_review_loop_retry_then_approved(tmp_path, monkeypatch):
     monkeypatch.setattr(PhaseRunner, "run", spy_run)
     monkeypatch.setattr(hitl_mod, "stage_task_files", lambda h: None)
     monkeypatch.setattr(BurstRunner, "compact_context", lambda *a, **kw: None)
-    monkeypatch.setattr(HitlReviewer, "run_reimplement", lambda *a, **kw: None)
+    monkeypatch.setattr(HitlReviewer, "run_reimplement", lambda *a, **kw: True)
 
     runner = _make_runner(tmp_path, monkeypatch, ctx=ctx)
-    runner.command_queue.put({"cmd": "retry", "feedback": "fix it"})
+    _route_on_next_interaction(runner, ("retry", {"feedback": "fix it"}))
 
     runner.hitl.hitl_review_loop(0, "T1", "t")
 

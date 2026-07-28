@@ -13,13 +13,15 @@ from src.core import git as _git
 from src.mission import human_input as _human_input
 from src.mission import runner as _mission_runner
 from src.core import notification as _notification
+from src.core.state import MissionState
 from src.mission import reporting as _reporting
 from src.core.paths import SRC_DIR
 from src.harness import harness_utils as _harness_utils
 from src.harness import phase_logger as _phase_logger
-from src.harness import registry as _registry
 from src.integrations import notifier as _notifier
 from src.integrations import telegram_listener as _telegram_listener
+from src.integrations.code_questions import CodeQuestionService
+from src.integrations.telegram_lock import TelegramLock
 
 MAX_TASKS = 20
 
@@ -94,21 +96,44 @@ class MissionProcess:
 
     def __init__(self):
         self.blocked: _block_state.BlockState | None = None
-        self.mission_tag = ""
         self.notify_prefix = ""
+        self.telegram_handle: _telegram_listener.ListenerHandle | None = None
+        self.telegram_lock: TelegramLock | None = None
         self.cleanup_done = False
 
     def cleanup(self):
-        if self.cleanup_done or not self.mission_tag:
+        if self.cleanup_done:
             return
         self.cleanup_done = True
+        handle = self.telegram_handle
+        lock = self.telegram_lock
+        self.telegram_handle = None
+        self.telegram_lock = None
+        _notification.set_notify_backend(_disabled_notify)
+        stopped = handle is None
         try:
-            _registry.unregister_mission(self.mission_tag)
-            remaining = _registry.list_missions()
-            if len(remaining) == 0:
-                print("Listener stopped (last mission exiting)")
+            if handle is not None:
+                stopped = handle.stop()
+                if not stopped:
+                    print(
+                        "WARNING: Telegram listener did not stop; bot lock retained until process exit",
+                        file=sys.stderr,
+                    )
         except Exception as e:
-            print(f"cleanup failed: {e}", file=sys.stderr)
+            stopped = False
+            print(f"Telegram listener cleanup failed: {e}", file=sys.stderr)
+        if lock is not None and stopped:
+            try:
+                lock.release()
+            except Exception as e:
+                print(f"Telegram lock cleanup failed: {e}", file=sys.stderr)
+        elif lock is not None:
+            # Releasing ownership while the listener still polls would permit
+            # two missions to control the same bot.  Retaining both references
+            # keeps the OS lock alive; the OS releases it when this process
+            # exits, including after SIGINT/SIGTERM.
+            self.telegram_handle = handle
+            self.telegram_lock = lock
 
     def signal_handler(self, signum, frame):
         sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
@@ -147,6 +172,31 @@ def _create_client():
     return anthropic.Anthropic()
 
 
+def _telegram_config() -> tuple[str, str] | None:
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if bool(token) != bool(chat_id):
+        print(
+            "ERROR: TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be configured together",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not token:
+        return None
+    try:
+        numeric_chat_id = int(chat_id)
+    except ValueError:
+        numeric_chat_id = 0
+    if numeric_chat_id <= 0:
+        print("ERROR: TELEGRAM_CHAT_ID must identify a private chat", file=sys.stderr)
+        raise SystemExit(2)
+    return token, str(numeric_chat_id)
+
+
+def _disabled_notify(_message: str, prefix: str = "") -> None:
+    del prefix
+
+
 def main():
     args = parse_args()
     resolve_args(args)
@@ -156,8 +206,11 @@ def main():
     )
 
     _load_env()
+    telegram_config = _telegram_config()
 
-    _notification.set_notify_backend(_notifier.notify)
+    # Reset process-global notification hooks before attempting ownership. A
+    # second mission that cannot acquire the bot lock must not emit messages.
+    _notification.set_notify_backend(_disabled_notify)
     _reporting.set_notify_result_backend(_notifier.notify_result)
 
     harness_info = _harness_utils.setup_harness(args.branch, args.gate, resume=args.resume, task=args.task)
@@ -166,7 +219,7 @@ def main():
 
     proc = MissionProcess()
     proc.notify_prefix = _notifier.compute_notify_prefix(harness_info['project_name'])
-    proc.mission_tag = harness_info['mission_tag']
+    _notification.set_notify_prefix(proc.notify_prefix)
 
     atexit.register(proc.cleanup)
     signal.signal(signal.SIGTERM, proc.signal_handler)
@@ -176,37 +229,77 @@ def main():
     _git.setup_git(args.branch)
     project_dir = str(Path.cwd())
 
-    _registry.register_mission(proc.mission_tag, harness_win, os.getpid())
-
     client = _create_client()
 
-    mission_state = _telegram_listener.MissionState()
+    mission_state = MissionState()
     command_queue = queue.Queue()
-
-    token = os.environ.get("TELEGRAM_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
-    if token and chat_id:
-        _telegram_listener.start_listener(token, chat_id, command_queue, mission_state, harness=harness)
-
-    _human_input._start_stdin_listener(command_queue)
 
     log = _phase_logger.make_logger(harness)
 
-    blocked = _block_state.BlockState()
-    proc.blocked = blocked
+    if telegram_config is not None:
+        token, chat_id = telegram_config
+        owner = TelegramLock(token)
+        lock_error = None
+        try:
+            acquired = owner.acquire()
+        except OSError as exc:
+            acquired = False
+            lock_error = exc
+            warning = f"Telegram disabled: could not acquire bot lock ({exc})"
+            print(f"WARNING: {warning}", file=sys.stderr)
+            log(f"WARNING: {warning}")
+        if not acquired and lock_error is None:
+            warning = "Telegram disabled: this bot token is already owned by another mission"
+            print(f"WARNING: {warning}", file=sys.stderr)
+            log(f"WARNING: {warning}")
+        if acquired:
+            proc.telegram_lock = owner
+            try:
+                question_service = CodeQuestionService(
+                    client,
+                    project_dir=Path.cwd(),
+                    harness_dir=harness,
+                    on_log=log,
+                )
+                proc.telegram_handle = _telegram_listener.start_listener(
+                    token,
+                    chat_id,
+                    command_queue,
+                    mission_state,
+                    harness=harness,
+                    question_service=question_service,
+                    on_log=log,
+                )
+            except Exception as exc:
+                warning = f"Telegram disabled: listener startup failed ({exc})"
+                print(f"WARNING: {warning}", file=sys.stderr)
+                log(f"WARNING: {warning}")
+                proc.telegram_lock.release()
+                proc.telegram_lock = None
+            else:
+                _notification.set_notify_backend(_notifier.notify)
 
-    ctx = _context.MissionContext(
-        task=args.task, branch=args.branch, mode=args.mode,
-        harness=harness, harness_win=harness_win,
-        project_dir=project_dir, gate="manual" if args.gate else "auto",
-        no_grill=args.no_grill, max_tasks=args.max_tasks,
-        resume=args.resume, notify_prefix=proc.notify_prefix,
-        mission_tag=proc.mission_tag,
-        project_name=harness_info['project_name'],
-    )
+    try:
+        _human_input._start_stdin_listener(command_queue, mission_state)
 
-    runner = _mission_runner.create_runner(client, ctx, command_queue, mission_state, log, blocked)
-    runner.execute()
+        blocked = _block_state.BlockState()
+        proc.blocked = blocked
+
+        ctx = _context.MissionContext(
+            task=args.task, branch=args.branch, mode=args.mode,
+            harness=harness, harness_win=harness_win,
+            project_dir=project_dir, gate="manual" if args.gate else "auto",
+            no_grill=args.no_grill, max_tasks=args.max_tasks,
+            resume=args.resume, notify_prefix=proc.notify_prefix,
+            project_name=harness_info['project_name'],
+        )
+
+        runner = _mission_runner.create_runner(
+            client, ctx, command_queue, mission_state, log, blocked,
+        )
+        runner.execute()
+    finally:
+        proc.cleanup()
 
     return proc
 

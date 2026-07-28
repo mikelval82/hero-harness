@@ -60,7 +60,7 @@ class TestNotify:
         assert "[PRJ]" in calls[0]
         assert "hello" in calls[0]
 
-    def test_truncation(self, monkeypatch):
+    def test_transport_owns_chunking(self, monkeypatch):
         monkeypatch.setenv("TELEGRAM_TOKEN", "tok")
         monkeypatch.setenv("TELEGRAM_CHAT_ID", "chat")
         import src.integrations.telegram_api as _api
@@ -68,7 +68,7 @@ class TestNotify:
         monkeypatch.setattr(_api, "send_message", lambda t, c, m: calls.append(m))
         notify("x" * 5000)
         assert len(calls) == 1
-        assert len(calls[0]) <= 4000
+        assert calls[0] == "x" * 5000
 
 
 class TestNotifyResult:

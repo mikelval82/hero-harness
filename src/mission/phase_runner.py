@@ -151,7 +151,7 @@ class PhaseRunner:
             "model": model_selection.model,
             **extra,
         }, log=log)
-        if phase_result is None:
+        if phase_result is None or self.blocked.reason:
             return None
 
         gate_file = gate_file_override
@@ -211,7 +211,7 @@ class PhaseRunner:
             "max_turns": config.max_turns,
             "model": model_selection.model,
         }, log=log)
-        if phase_result is None:
+        if phase_result is None or self.blocked.reason:
             return None
 
         gate_file = None

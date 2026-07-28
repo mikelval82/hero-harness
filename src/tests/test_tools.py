@@ -4,7 +4,7 @@ import time
 import shutil
 from pathlib import Path
 
-from src.agent import bash_executor
+from src.agent import bash_executor, search_tools
 from src.agent.tools import ToolExecutor, execute_tool
 from src.agent.tool_schema import TOOL_DEFINITIONS, TOOL_REGISTRY, ToolDef, register_tool
 from src.agent.bash_policy import ALLOWED_BASH_COMMANDS
@@ -302,6 +302,37 @@ def test_grep_with_rg(project_dir, harness_dir):
     assert "sample.py" in result
 
 
+def test_grep_terminates_rg_options_before_model_pattern(
+    project_dir, harness_dir, monkeypatch
+):
+    calls = []
+
+    class Completed:
+        stdout = ""
+        stderr = ""
+        returncode = 1
+
+    monkeypatch.setattr(search_tools.shutil, "which", lambda _name: "rg")
+    monkeypatch.setattr(
+        search_tools.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs)) or Completed(),
+    )
+    option_like_pattern = "--pre=python untrusted.py"
+
+    execute_tool(
+        "Grep",
+        {"pattern": option_like_pattern, "path": str(project_dir)},
+        project_dir,
+        harness_dir,
+    )
+
+    args = calls[0][0]
+    boundary = args.index("--")
+    assert args[boundary + 1] == option_like_pattern
+    assert args[boundary + 2] == str(project_dir)
+
+
 def test_grep_fallback(project_dir, harness_dir, monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda x: None)
     (project_dir / "code.py").write_text("def bar():\n    return 42\n")
@@ -333,7 +364,7 @@ def test_grep_outside_rejected(project_dir, harness_dir, tmp_path):
 # --- Meta tests ---
 
 def test_tool_definitions_valid():
-    assert len(TOOL_DEFINITIONS) == 6
+    assert len(TOOL_DEFINITIONS) == 7
     for td in TOOL_DEFINITIONS:
         assert "name" in td
         assert "description" in td
@@ -402,7 +433,9 @@ class TestToolExecutor:
 class TestToolRegistry:
 
     def test_registry_has_all_tools(self):
-        assert set(TOOL_REGISTRY.keys()) == {"Read", "Write", "Edit", "Bash", "Glob", "Grep"}
+        assert set(TOOL_REGISTRY.keys()) == {
+            "Read", "Write", "Edit", "Bash", "Glob", "Grep", "CodeGraph",
+        }
 
     def test_registry_entries_are_tool_defs(self):
         for name, td in TOOL_REGISTRY.items():

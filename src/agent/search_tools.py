@@ -67,9 +67,10 @@ def _tool_grep(inp: dict, project_dir: Path, harness_dir: Path) -> str:
     output_mode = inp.get("output_mode", "files_with_matches")
     context = inp.get("context")
     head_limit = inp.get("head_limit", 250)
+    timeout = min(30.0, max(0.001, float(inp.get("_timeout_seconds", 30.0))))
 
     if shutil.which("rg"):
-        args = ["rg", pattern]
+        args = ["rg"]
         if output_mode == "files_with_matches":
             args.append("-l")
         elif output_mode == "count":
@@ -78,10 +79,13 @@ def _tool_grep(inp: dict, project_dir: Path, harness_dir: Path) -> str:
             args.extend(["-C", str(context)])
         if glob_filter:
             args.extend(["--glob", glob_filter])
-        args.append(search_path)
+        # End option parsing before the model-supplied pattern.  Without this,
+        # a pattern such as ``--pre=...`` is interpreted by ripgrep as an
+        # executable preprocessor instead of search text.
+        args.extend(["--", pattern, search_path])
         try:
             result = subprocess.run(
-                args, capture_output=True, text=True, timeout=30
+                args, capture_output=True, text=True, timeout=timeout
             )
         except subprocess.TimeoutExpired:
             return "Error: grep timed out"
@@ -91,7 +95,7 @@ def _tool_grep(inp: dict, project_dir: Path, harness_dir: Path) -> str:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(_grep_fallback, pattern, search_path, glob_filter, output_mode, context)
             try:
-                output = future.result(timeout=30)
+                output = future.result(timeout=timeout)
             except concurrent.futures.TimeoutError:
                 return "Error: grep timed out"
 
