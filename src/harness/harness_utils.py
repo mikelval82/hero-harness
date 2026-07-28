@@ -50,22 +50,100 @@ def sanitize_name(name: str, max_len: int = 0) -> str:
     return name
 
 
+def harness_path(branch: str, cwd=None) -> Path:
+    """Compute a mission workspace path without creating or modifying it."""
+    project_dir = Path(cwd or Path.cwd()).resolve()
+    branch_safe = sanitize_name(branch, max_len=60)
+    project_name = sanitize_name(project_dir.name)
+    if not project_name or not branch_safe:
+        raise RuntimeError(
+            "Cannot create harness workspace: project and branch names must each "
+            "contain at least one ASCII letter, digit, underscore, or hyphen"
+        )
+    return Path.home() / '.harness' / project_name / branch_safe
+
+
+def _read_harness_owner(harness: Path) -> tuple[Path, str]:
+    try:
+        project_text = (harness / "_project_dir").read_text(
+            encoding="utf-8"
+        ).strip()
+        recorded_branch = (harness / "_branch").read_text(
+            encoding="utf-8"
+        ).strip()
+        project_marker = Path(project_text)
+        if not project_text or not project_marker.is_absolute() or not recorded_branch:
+            raise ValueError("ownership markers must be non-empty and absolute")
+        recorded_project = project_marker.resolve()
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise RuntimeError(
+            f"workspace ownership markers are invalid: {harness}"
+        ) from exc
+    return recorded_project, recorded_branch
+
+
+def _require_owned_harness(harness: Path, project_dir: Path, branch: str) -> None:
+    """Fail closed unless an existing workspace has this exact owner."""
+    if harness.is_symlink() or not harness.is_dir():
+        raise RuntimeError(
+            f"Cannot replace harness workspace: unsafe existing path: {harness}"
+        )
+    recorded_project, recorded_branch = _read_harness_owner(harness)
+    if recorded_project != project_dir or recorded_branch != branch:
+        raise RuntimeError(
+            "Cannot replace harness workspace owned by "
+            f"project {recorded_project} on branch {recorded_branch!r}: {harness}"
+        )
+
+
+def require_resume_harness(branch: str, cwd=None) -> Path:
+    """Validate that a workspace belongs to this exact project and branch."""
+    project_dir = Path(cwd or Path.cwd()).resolve()
+    harness = harness_path(branch, project_dir)
+    if not harness.is_dir():
+        raise RuntimeError(f"Cannot resume: harness workspace does not exist: {harness}")
+
+    tasks_path = harness / "tasks.json"
+    try:
+        task_items = json.loads(tasks_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Cannot resume: invalid tasks.json in {harness}: {exc}") from exc
+    if not isinstance(task_items, list):
+        raise RuntimeError(f"Cannot resume: tasks.json must contain a list: {tasks_path}")
+
+    try:
+        recorded_project, recorded_branch = _read_harness_owner(harness)
+    except RuntimeError as exc:
+        raise RuntimeError(f"Cannot resume: {exc}") from exc
+    if recorded_project != project_dir:
+        raise RuntimeError(
+            f"Cannot resume: workspace belongs to {recorded_project}, not {project_dir}"
+        )
+    if recorded_branch != branch:
+        raise RuntimeError(
+            f"Cannot resume: workspace belongs to branch {recorded_branch!r}, not {branch!r}"
+        )
+    return harness
+
+
 def setup_harness(branch: str, gate: bool, cwd=None, resume: bool = False, task: str = "") -> dict:
     cwd = Path(cwd or Path.cwd()).resolve()
     branch_safe = sanitize_name(branch, max_len=60)
     project_name = sanitize_name(cwd.name)
-    harness = Path.home() / '.harness' / project_name / branch_safe
+    harness = harness_path(branch, cwd)
     harness_win = str(harness.resolve())
-    preserving_harness = resume and harness.exists() and (harness / "tasks.json").is_file()
+    preserving_harness = resume
 
     if preserving_harness:
-        pass
+        require_resume_harness(branch, cwd)
     else:
         if harness.exists():
+            _require_owned_harness(harness, cwd, branch)
             shutil.rmtree(harness)
         harness.mkdir(parents=True)
 
     (harness / '_project_dir').write_text(str(cwd), encoding='utf-8')
+    (harness / '_branch').write_text(branch, encoding='utf-8')
     (harness / '_gate_mode').write_text('manual' if gate else 'auto', encoding='utf-8')
     memory_info = stage_project_memory(cwd, harness, preserve_existing=preserving_harness)
     cases_info = stage_retrieved_cases(cwd, harness, query=task, preserve_existing=preserving_harness)

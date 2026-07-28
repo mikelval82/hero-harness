@@ -158,12 +158,39 @@ class TestStageTaskFiles:
         (tmp_path / "src").mkdir()
         (tmp_path / "src" / "a.py").write_text("a", encoding="utf-8")
         calls = []
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
         monkeypatch.setattr(tasks_mod, "subprocess", type("M", (), {
-            "run": staticmethod(lambda cmd, **kw: calls.append(cmd))
+            "run": staticmethod(fake_run)
         })())
         monkeypatch.chdir(tmp_path)
         stage_task_files(h)
         assert len(calls) == 1
+        assert calls[0] == ["git", "add", "--", "src/a.py"]
+
+    def test_stages_deleted_files(self, tmp_path, monkeypatch):
+        h = _make_harness(tmp_path, status_md="## Files\n- src/deleted.py\n")
+        calls = []
+        def fake_run(cmd, **kw):
+            calls.append(cmd)
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+        monkeypatch.setattr(tasks_mod, "subprocess", type("M", (), {
+            "run": staticmethod(fake_run)
+        })())
+        monkeypatch.chdir(tmp_path)
+        stage_task_files(h)
+        assert calls == [["git", "add", "--", "src/deleted.py"]]
+
+    def test_add_failure_is_visible(self, tmp_path, monkeypatch, capsys):
+        h = _make_harness(tmp_path, status_md="## Files\n- src/a.py\n")
+        result = type("Result", (), {
+            "returncode": 128, "stdout": "", "stderr": "bad pathspec",
+        })()
+        monkeypatch.setattr(tasks_mod.subprocess, "run", lambda *a, **kw: result)
+        with pytest.raises(RuntimeError, match="bad pathspec"):
+            stage_task_files(h)
+        assert "Staged:" not in capsys.readouterr().out
 
     def test_no_files_warning(self, tmp_path, monkeypatch):
         h = _make_harness(tmp_path)

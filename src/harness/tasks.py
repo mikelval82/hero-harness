@@ -133,6 +133,10 @@ def stage_task_files(harness: Path) -> None:
         print("WARNING: no files to stage")
         return
     for f in files:
-        if Path(f).is_file():
-            subprocess.run(["git", "add", f], check=False)
-            print(f"Staged: {f}")
+        result = subprocess.run(
+            ["git", "add", "--", f], capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or f"exit code {result.returncode}").strip()
+            raise RuntimeError(f"git add failed for {f!r}: {detail}")
+        print(f"Staged: {f}")

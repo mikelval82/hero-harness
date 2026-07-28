@@ -1,6 +1,6 @@
 # Hardening minimo de alto impacto
 
-**Estado:** propuesta
+**Estado:** especificacion P0 cerrada; implementacion en curso
 
 ## Objetivo
 
@@ -21,6 +21,25 @@ El objetivo no es convertir HERO en una sandbox de proposito general. El
 implementer necesita ejecutar codigo del proyecto y, por tanto, el target debe
 seguir considerandose confiable. La mejora consiste en reducir la superficie de
 riesgo y hacer que el runtime cumpla las restricciones que ya declara.
+
+## Decisiones P0 cerradas
+
+Estas decisiones forman el gate de implementacion y no quedan abiertas a
+interpretacion durante los tres commits de hardening:
+
+| Frontera | Decision definitiva |
+|---|---|
+| Escritura | `PhaseConfig.allow_project_writes=False` por defecto. Solo `implement`, `implement_bursts` y `reimplement` pueden escribir en el target; las demas fases solo pueden escribir artefactos dentro del harness. |
+| Code graph | La herramienta nativa conserva exactamente `find_nodes`, `dependencies`, `dependents`, `impact_analysis` y `dead_code`, con fallback recuperable a `Read`/`Glob`/`Grep`. |
+| Bash analitico | `research`, `grill`, `structure`, `spec` y `plan` pierden Bash una vez migradas sus consultas al grafo estructurado. |
+| REVIEW | Conserva Bash como excepcion P0 documentada, pero todos sus procesos hijos reciben el entorno sin credenciales de HERO. |
+| Modos Git | `full`, `focused` y `hotfix` son mutantes. `explore`, `spec` y `spec-plan` no ejecutan ninguna operacion Git. |
+| Resume | Un `--resume` mutante exige un workspace valido de ese proyecto y branch, HEAD adjunto y coincidencia exacta de branch; nunca hace checkout implicito. |
+
+La implementacion se divide en tres commits independientes (`git`, `graph` y
+`tools`) con pruebas deterministas por bloque y una unica auditoria global al
+final. REVIEW conserva Bash; sustituirlo por una validacion mas estrecha queda
+explicitamente en P1.
 
 ## Principios de la solucion
 
