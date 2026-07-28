@@ -29,6 +29,7 @@ class TestPhaseConfig:
         assert pc.timeout == 1200
         assert pc.includes == {}
         assert pc.is_conversation is False
+        assert pc.allow_project_writes is False
 
     def test_with_includes(self):
         pc = PhaseConfig(
@@ -113,6 +114,20 @@ class TestPhaseRegistry:
             if "CodeGraph" in config.tools.split(",")
         }
         assert actual == expected
+
+    def test_project_write_capability_is_explicit_and_minimal(self):
+        allowed = {
+            name for name, config in PHASE_REGISTRY.items()
+            if config.allow_project_writes
+        }
+        assert allowed == {"implement", "implement_bursts", "reimplement"}
+
+    def test_bash_capability_is_explicit_and_minimal(self):
+        allowed = {
+            name for name, config in PHASE_REGISTRY.items()
+            if "Bash" in config.tools.split(",")
+        }
+        assert allowed == {"implement", "implement_bursts", "review", "reimplement"}
 
     def test_project_memory_injected_into_agentic_phases(self):
         expected = {

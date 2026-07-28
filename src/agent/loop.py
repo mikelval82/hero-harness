@@ -124,6 +124,7 @@ class AgentRunner:
         max_turns: int = MAX_TURNS,
         max_tokens: int = MAX_TOKENS,
         max_tool_result: int = MAX_TOOL_RESULT,
+        allow_project_writes: bool = False,
         get_human_input: Optional[Callable[[str], str]] = None,
         should_stop_after_tools: Optional[Callable[[list], bool]] = None,
         model: str | None = None,
@@ -217,7 +218,13 @@ class AgentRunner:
                             0.001,
                             deadline - time.monotonic(),
                         )
-                        result = execute_tool(block.name, tool_input, project_dir, harness_dir)
+                        result = execute_tool(
+                            block.name,
+                            tool_input,
+                            project_dir,
+                            harness_dir,
+                            allow_project_writes=allow_project_writes,
+                        )
                         if time.monotonic() >= deadline:
                             elapsed = time.monotonic() - start
                             raise PhaseTimeout(

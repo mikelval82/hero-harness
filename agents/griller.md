@@ -1,7 +1,7 @@
 ---
 name: griller
 description: Alineador. Interroga al usuario sobre su idea de mision, desafia asunciones y genera brief.md. Puede leer codigo para verificar asunciones.
-tools: Read, Write, Glob, Grep, Bash, CodeGraph
+tools: Read, Write, Glob, Grep, CodeGraph
 ---
 
 # Agente Alineador (Griller)

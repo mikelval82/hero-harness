@@ -22,7 +22,7 @@ class PhaseName(str, Enum):
     REPORT_PLAN = "report_plan"
 
 
-DEFAULT_TOOLS = "Read,Write,Glob,Grep,Bash,CodeGraph"
+DEFAULT_TOOLS = "Read,Write,Glob,Grep,CodeGraph"
 IMPL_TOOLS = "Read,Write,Edit,Glob,Grep,Bash,CodeGraph"
 REVIEW_TOOLS = "Read,Write,Glob,Grep,Bash,CodeGraph"
 
@@ -39,6 +39,7 @@ class PhaseConfig:
     includes: dict = field(default_factory=dict)
     variables: dict = field(default_factory=dict)
     is_conversation: bool = False
+    allow_project_writes: bool = False
 
 
 PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
@@ -136,6 +137,7 @@ PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
         gate="status.md",
         tools=IMPL_TOOLS,
         max_turns=75,
+        allow_project_writes=True,
         includes={
             "PROJECT_MEMORY": "project-memory.md",
             "MISSION_CASES": "retrieved-cases.md",
@@ -156,6 +158,7 @@ PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
         tools=IMPL_TOOLS,
         max_turns=20,
         timeout=300,
+        allow_project_writes=True,
         includes={
             "PROJECT_MEMORY": "project-memory.md",
             "MISSION_CASES": "retrieved-cases.md",
@@ -191,6 +194,7 @@ PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
         gate="status.md",
         tools=IMPL_TOOLS,
         max_turns=75,
+        allow_project_writes=True,
         includes={
             "PROJECT_MEMORY": "project-memory.md",
             "MISSION_CASES": "retrieved-cases.md",

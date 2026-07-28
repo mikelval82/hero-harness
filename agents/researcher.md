@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: Investigador. Analiza el codebase, explora enfoques posibles y genera brainstorm.md y context-hot.md. No escribe codigo de produccion.
-tools: Read, Glob, Grep, Bash, Write, CodeGraph
+tools: Read, Glob, Grep, Write, CodeGraph
 ---
 
 # Agente Investigador (Researcher)

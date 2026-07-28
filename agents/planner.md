@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Planificador. Crea plan de implementacion tecnico y decisiones a partir de la especificacion. No escribe codigo.
-tools: Read, Write, Glob, Grep, Bash, CodeGraph
+tools: Read, Write, Glob, Grep, CodeGraph
 ---
 
 # Agente Planificador (Planner)

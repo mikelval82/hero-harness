@@ -9,6 +9,20 @@ from src.agent.path_policy import _validate_access_path
 from src.agent.bash_policy import _validate_bash_command
 
 
+HERO_CREDENTIAL_KEYS = frozenset({
+    "ANTHROPIC_API_KEY",
+    "TELEGRAM_TOKEN",
+    "TELEGRAM_CHAT_ID",
+})
+
+
+def _strip_hero_credentials(env: dict[str, str]) -> dict[str, str]:
+    for key in tuple(env):
+        if key.upper() in HERO_CREDENTIAL_KEYS:
+            env.pop(key, None)
+    return env
+
+
 BASH_SCHEMA: dict = {
     "name": "Bash",
     "description": "Execute a shell command. Only whitelisted commands are allowed.",
@@ -35,7 +49,7 @@ def _tool_bash(inp: dict, project_dir: Path, harness_dir: Path) -> str:
     command = inp["command"]
     pipelines = _validate_bash_command(command, project_dir, harness_dir)
     timeout = min(inp.get("timeout", 120), 600)
-    env = os.environ.copy()
+    env = _strip_hero_credentials(os.environ.copy())
     cwd = project_dir.resolve()
     output = []
     last_code = 0
@@ -123,6 +137,7 @@ def _run_bash_command(
         return _builtin_ls(args, cwd, project_dir, harness_dir)
 
     try:
+        child_env = _strip_hero_credentials(env.copy())
         completed = subprocess.run(
             argv,
             input=stdin_text,
@@ -130,7 +145,7 @@ def _run_bash_command(
             text=True,
             timeout=timeout,
             cwd=str(cwd),
-            env=env,
+            env=child_env,
         )
     except FileNotFoundError:
         return _CommandResult(stderr=f"command not found: {argv[0]}\n", returncode=127)

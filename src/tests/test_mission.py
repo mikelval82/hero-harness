@@ -2550,6 +2550,35 @@ def test_phase_runner_rebuilds_before_every_review(
     runner.run(config, {})
 
     assert events == ["rebuild", "review", "rebuild", "review"]
+    assert all(
+        call.kwargs["allow_project_writes"] is False
+        for call in mock_deferred_imports["agent_run"].call_args_list
+    )
+
+
+def test_phase_runner_conversation_propagates_write_capability(tmp_path, monkeypatch):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="grill", agent="griller.md", template="grill-prompt.md", gate=None,
+        tools=DEFAULT_TOOLS, max_turns=10,
+    )
+    captured = {}
+    monkeypatch.setattr(phase_runner_mod, "render_prompt", lambda *a, **kw: "prompt")
+    monkeypatch.setattr(phase_runner_mod, "load_agent_system", lambda *a, **kw: "system")
+    monkeypatch.setattr(phase_runner_mod, "make_tool_callback", lambda *a, **kw: None)
+    monkeypatch.setattr(phase_runner_mod, "_write_metric", lambda *a, **kw: None)
+
+    def fake_conversation(**kwargs):
+        captured.update(kwargs)
+        return PhaseResult(
+            text="done", turns=1, elapsed=0.1, input_tokens=1, output_tokens=1,
+        )
+
+    monkeypatch.setattr(phase_runner_mod.agent_loop, "run_conversation", fake_conversation)
+
+    assert runner.run_conversation(config, {}, lambda _prompt: "done") == "done"
+    assert captured["allow_project_writes"] is False
 
 
 def test_phase_runner_status_artifact_stop_condition(tmp_path):
@@ -2588,6 +2617,21 @@ def test_phase_runner_status_artifact_stop_condition_ignores_other_files(tmp_pat
     assert should_stop([block]) is False
 
 
+def test_phase_runner_relative_write_path_uses_project_semantics(tmp_path):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="grill", agent="", template="t.md", gate="brief.md",
+        tools=DEFAULT_TOOLS, max_turns=10,
+    )
+    (ctx.harness / "brief.md").write_text("STATUS: DONE\n", encoding="utf-8")
+    block = MagicMock()
+    block.name = "Write"
+    block.input = {"file_path": "brief.md"}
+
+    assert runner._status_artifact_stop_condition(config)([block]) is False
+
+
 def test_phase_runner_run_blocked(tmp_path, reset_blocked, mock_deferred_imports):
     blocked = BlockState()
     blocked.reason = BlockReason(BlockKind.TIMEOUT, phase="already")
@@ -2610,6 +2654,7 @@ def test_phase_runner_run_happy(tmp_path, mock_deferred_imports):
     assert result == "PHASE_RESULT"
     mock_deferred_imports["agent_run"].assert_called_once()
     assert mock_deferred_imports["agent_run"].call_args[1]["model"] == "claude-sonnet-4-6"
+    assert mock_deferred_imports["agent_run"].call_args[1]["allow_project_writes"] is False
 
 
 def test_phase_runner_run_timeout(tmp_path, reset_blocked, mock_deferred_imports):
@@ -2671,6 +2716,7 @@ def test_phase_runner_run_overrides(tmp_path, mock_deferred_imports):
     assert call_kwargs["phase_name"] == "implement[t]#1"
     assert call_kwargs["timeout"] == 300
     assert call_kwargs["max_turns"] == 20
+    assert call_kwargs["allow_project_writes"] is True
 
 
 def test_phase_runner_routes_large_task_to_deep_model(tmp_path, mock_deferred_imports):

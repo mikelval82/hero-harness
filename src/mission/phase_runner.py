@@ -40,7 +40,7 @@ class PhaseRunner:
             return False
         candidate = Path(raw_path)
         if not candidate.is_absolute():
-            candidate = self.ctx.harness / candidate
+            candidate = Path(self.ctx.project_dir) / candidate
         try:
             return candidate.resolve() == target.resolve()
         except OSError:
@@ -161,6 +161,7 @@ class PhaseRunner:
             "on_log": log,
             "timeout": timeout,
             "model": model_selection.model,
+            "allow_project_writes": config.allow_project_writes,
             **extra,
         }, log=log)
         if phase_result is None or self.blocked.reason:
@@ -222,6 +223,7 @@ class PhaseRunner:
             "timeout": config.timeout,
             "max_turns": config.max_turns,
             "model": model_selection.model,
+            "allow_project_writes": config.allow_project_writes,
         }, log=log)
         if phase_result is None or self.blocked.reason:
             return None

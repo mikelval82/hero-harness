@@ -1,7 +1,7 @@
 ---
 name: structurer
 description: Estructurador. Lee brainstorm.md y genera tasks.json. No escribe codigo de produccion.
-tools: Read, Write, Glob, Grep, Bash, CodeGraph
+tools: Read, Write, Glob, Grep, CodeGraph
 ---
 
 # Agente Estructurador (Structurer)

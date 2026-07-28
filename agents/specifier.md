@@ -1,7 +1,7 @@
 ---
 name: specifier
 description: Especificador. Crea especificacion tecnica concisa a partir de una tarea del sprint. No escribe codigo.
-tools: Read, Write, Glob, Grep, Bash, CodeGraph
+tools: Read, Write, Glob, Grep, CodeGraph
 ---
 
 # Agente Especificador (Specifier)
