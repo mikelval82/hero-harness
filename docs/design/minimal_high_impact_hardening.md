@@ -199,8 +199,10 @@ Exponer una herramienta estructurada cuyo input no sea un comando shell:
 
 ```text
 CodeGraph(
-    operation = find_node | dependencies | dependents | impact_analysis | dead_code,
-    query = <simbolo o patron, cuando aplique>
+    action = find_nodes | dependencies | dependents | impact_analysis | dead_code,
+    pattern = <substring literal, solo para find_nodes>,
+    node = <id exacto, solo para recorridos>,
+    limit = <1..200, opcional>
 )
 ```
 

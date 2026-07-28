@@ -96,8 +96,22 @@ class TestPhaseRegistry:
             assert cfg.template, f"{name} has no template"
 
     def test_graph_instructions_phases(self):
-        expected = {"research", "grill", "spec", "plan", "implement", "implement_bursts", "review"}
+        expected = {
+            "research", "grill", "structure", "spec", "plan", "implement",
+            "implement_bursts", "review", "reimplement",
+        }
         actual = {n for n, c in PHASE_REGISTRY.items() if "GRAPH_INSTRUCTIONS" in c.includes}
+        assert actual == expected
+
+    def test_code_graph_is_available_to_all_agentic_phases(self):
+        expected = {
+            "research", "grill", "structure", "spec", "plan", "implement",
+            "implement_bursts", "review", "reimplement",
+        }
+        actual = {
+            name for name, config in PHASE_REGISTRY.items()
+            if "CodeGraph" in config.tools.split(",")
+        }
         assert actual == expected
 
     def test_project_memory_injected_into_agentic_phases(self):

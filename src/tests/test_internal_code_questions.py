@@ -147,6 +147,21 @@ def test_code_graph_queries_are_parameterized_bounded_and_recoverable(tmp_path):
     missing = _tool_code_graph({"action": "dead_code"}, tmp_path, tmp_path / "missing")
     assert "code_graph.db is not available" in missing
 
+    for forbidden in ("sql", "db_path", "command", "interpreter"):
+        denied = _tool_code_graph(
+            {"action": "dead_code", forbidden: "not allowed"}, tmp_path, harness,
+        )
+        assert "unexpected field" in denied
+
+    wrong_action_field = _tool_code_graph(
+        {"action": "dead_code", "node": "a.py:caller"}, tmp_path, harness,
+    )
+    assert "unexpected field" in wrong_action_field
+
+    (harness / "code_graph.invalid").write_text("failed rebuild\n", encoding="utf-8")
+    stale = _tool_code_graph({"action": "dead_code"}, tmp_path, harness)
+    assert "failed rebuild" in stale
+
 
 def test_agent_runner_blocks_unannounced_tool_and_honors_custom_limits(tmp_path):
     client = _FakeClient(

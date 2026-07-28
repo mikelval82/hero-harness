@@ -113,7 +113,7 @@ class MissionRunner:
         ctx = self.ctx
         pipeline = ctx.get_mission_pipeline()
 
-        build_code_graph(ctx.project_dir, log=self.log)
+        build_code_graph(ctx.project_dir, log=self.log, harness_dir=ctx.harness)
 
         for step in pipeline["init"]:
             optional = step.endswith("?")
@@ -121,7 +121,7 @@ class MissionRunner:
 
             if phase_name == PhaseName.COMPACT:
                 self.burst.compact_context()
-                build_code_graph(ctx.project_dir, log=self.log)
+                build_code_graph(ctx.project_dir, log=self.log, harness_dir=ctx.harness)
                 if not self._checkpoint():
                     self.log(f"<<< Mission BLOCKED: {self.blocked.value}")
                     self._generate_blocked_report()

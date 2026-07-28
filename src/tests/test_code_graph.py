@@ -1,5 +1,6 @@
 import sys
 import io
+import json
 import ast
 import subprocess
 from pathlib import Path
@@ -9,6 +10,7 @@ from argparse import Namespace
 import sqlite3
 
 from src.analysis import code_graph
+from src.agent.code_graph_tool import _tool_code_graph
 import pytest
 
 
@@ -80,6 +82,23 @@ def test_parse_file_syntax_error(tmp_path):
 
 
 # --- build_graph ---
+
+
+def test_cli_build_clears_invalid_marker_after_success(tmp_path, monkeypatch):
+    _patch_git(monkeypatch)
+    target = tmp_path / "target"
+    harness = tmp_path / "harness"
+    target.mkdir()
+    harness.mkdir()
+    (target / "app.py").write_text("def answer():\n    return 42\n")
+    marker = harness / "code_graph.invalid"
+    marker.write_text("previous failure\n")
+    monkeypatch.setattr(code_graph, "HARNESS", harness)
+
+    code_graph.cmd_build(Namespace(root_dir=str(target), force=True))
+
+    assert (harness / "code_graph.db").is_file()
+    assert not marker.exists()
 
 def test_build_graph_nodes(graph_project):
     G = code_graph.build_graph(str(graph_project))
@@ -273,6 +292,47 @@ def test_cmd_dead_code(graph_db):
     items = {line.split("\t")[1] for line in lines}
     assert items == {"mod_a.py:caller", "mod_b.py:Child", "mod_b.py:Child.method"}
     assert "mod_a.py:Base" not in out
+
+
+def test_cli_and_native_tool_share_all_query_semantics(graph_db):
+    root, _graph = graph_db
+    cases = [
+        (
+            code_graph.cmd_find_node,
+            Namespace(pattern="helper"),
+            {"action": "find_nodes", "pattern": "helper"},
+            lambda row: f"{row[0]}\t{row[1]}",
+        ),
+        (
+            code_graph.cmd_dependencies,
+            Namespace(node="mod_a.py:caller"),
+            {"action": "dependencies", "node": "mod_a.py:caller"},
+            lambda row: f"{row[0]}\t{row[2]}",
+        ),
+        (
+            code_graph.cmd_dependents,
+            Namespace(node="mod_b.py:helper"),
+            {"action": "dependents", "node": "mod_b.py:helper"},
+            lambda row: f"{row[0]}\t{row[2]}",
+        ),
+        (
+            code_graph.cmd_impact_analysis,
+            Namespace(node="mod_b.py:helper"),
+            {"action": "impact_analysis", "node": "mod_b.py:helper"},
+            lambda row: row[1],
+        ),
+        (
+            code_graph.cmd_dead_code,
+            Namespace(),
+            {"action": "dead_code"},
+            lambda row: f"{row[0]}\t{row[1]}",
+        ),
+    ]
+
+    for cli_fn, args, tool_input, format_row in cases:
+        cli_lines = _capture(cli_fn, args).strip().splitlines()
+        native = json.loads(_tool_code_graph(tool_input, root, root))
+        assert cli_lines == [format_row(row) for row in native["rows"]]
 
 
 # --- incremental sync ---

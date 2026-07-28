@@ -40,7 +40,9 @@ from src.harness.tasks import (
 from src.harness.telemetry import read_events, write_phase_event
 from src.integrations.notifier import PROJECT_COLORS, compute_notify_prefix
 from src.agent.loop import PhaseResult, PhaseTimeout
-from src.core.context import DEFAULT_TOOLS, PHASE_REGISTRY, MissionContext, PhaseConfig
+from src.core.context import (
+    DEFAULT_TOOLS, REVIEW_TOOLS, PHASE_REGISTRY, MissionContext, PhaseConfig,
+)
 import src.agent.loop as _al
 from src.mission import reporting as reporting_mod
 from src.mission import phase_runner as phase_runner_mod
@@ -2376,6 +2378,7 @@ def test_auto_branch_name_from_task():
 
 def test_build_code_graph_success(monkeypatch):
     logs = []
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     fake_result = subprocess.CompletedProcess(
         args=[], returncode=0, stdout="Built graph: 42 nodes, 10 edges", stderr=""
     )
@@ -2394,6 +2397,21 @@ def test_build_code_graph_failure(monkeypatch):
     build_code_graph("/project", log=lambda m: logs.append(m))
     assert len(logs) == 1
     assert "failed" in logs[0]
+
+
+def test_build_code_graph_failure_discards_stale_database(tmp_path, monkeypatch):
+    harness = tmp_path / "harness"
+    harness.mkdir()
+    stale = harness / "code_graph.db"
+    stale.write_bytes(b"stale")
+    fake_result = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr="parse failed",
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
+
+    assert build_code_graph(tmp_path, harness_dir=harness) is False
+    assert not stale.exists()
+    assert (harness / "code_graph.invalid").is_file()
 
 
 def test_build_code_graph_timeout(monkeypatch):
@@ -2417,24 +2435,38 @@ def test_build_code_graph_exception(monkeypatch):
 
 
 def test_build_code_graph_no_log(monkeypatch):
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
     build_code_graph("/project")
 
 
 def test_build_code_graph_passes_correct_args(monkeypatch):
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     captured = []
     def capture_run(*args, **kwargs):
-        captured.append(args[0])
+        captured.append((args[0], kwargs))
         return subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
     monkeypatch.setattr(subprocess, "run", capture_run)
     build_code_graph("/my/project", log=lambda m: None)
     assert len(captured) == 1
-    cmd = captured[0]
+    cmd, kwargs = captured[0]
     assert cmd[0] == sys.executable
-    assert "code_graph.py" in cmd[1]
-    assert cmd[2] == "build"
-    assert cmd[3] == "/my/project"
+    assert cmd[1:4] == ["-m", "src.analysis.code_graph", "build"]
+    assert cmd[4] == "/my/project"
+    assert kwargs["cwd"] == str(Path(mission_runner_mod.__file__).resolve().parents[2])
+
+
+def test_build_code_graph_supports_external_target(tmp_path):
+    target = tmp_path / "external-target"
+    harness = tmp_path / "harness"
+    target.mkdir()
+    harness.mkdir()
+    (target / "app.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
+
+    assert build_code_graph(target, harness_dir=harness) is True
+    assert (harness / "code_graph.db").is_file()
+    assert not (target / "src" / "analysis" / "code_graph.py").exists()
 
 
 # --- PhaseRunner tests ---
@@ -2492,6 +2524,32 @@ def test_phase_runner_resolve_includes_extra(tmp_path):
     resolved = runner._resolve_includes(config, extra_includes={"EXTRA": "/custom/path"})
     assert resolved["SPEC"] == str(ctx.harness / "spec.md")
     assert resolved["EXTRA"] == "/custom/path"
+
+
+def test_phase_runner_rebuilds_before_every_review(
+    tmp_path, monkeypatch, mock_deferred_imports,
+):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="review", agent="", template="review-prompt.md", gate=None,
+        tools=REVIEW_TOOLS, max_turns=10,
+    )
+    events = []
+    monkeypatch.setattr(
+        phase_runner_mod, "build_code_graph",
+        lambda *a, **kw: events.append("rebuild") or True,
+    )
+    mock_deferred_imports["agent_run"].side_effect = lambda **kw: (
+        events.append("review") or PhaseResult(
+            text="done", turns=1, elapsed=0.1, input_tokens=1, output_tokens=1,
+        )
+    )
+
+    runner.run(config, {})
+    runner.run(config, {})
+
+    assert events == ["rebuild", "review", "rebuild", "review"]
 
 
 def test_phase_runner_status_artifact_stop_condition(tmp_path):

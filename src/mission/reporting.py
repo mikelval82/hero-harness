@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 from src.core.paths import SRC_DIR, PROMPTS_DIR
 from src.core.block_state import BlockKind, BlockReason
@@ -220,22 +221,66 @@ def notify_result(task, branch, harness, blocked):
                                notify_fn=notify)
 
 
-def build_code_graph(project_dir, log=None):
-    script = SRC_DIR / "analysis" / "code_graph.py"
+def build_code_graph(project_dir, log=None, harness_dir=None) -> bool:
+    graph_path = None
+    if harness_dir is not None:
+        graph_path = Path(harness_dir) / "code_graph.db"
+    elif os.environ.get("CLAUDE_HARNESS"):
+        graph_path = Path(os.environ["CLAUDE_HARNESS"]) / "code_graph.db"
+    invalid_marker = graph_path.with_suffix(".invalid") if graph_path else None
+
+    def discard_stale_graph() -> None:
+        if graph_path is None:
+            return
+        try:
+            graph_path.unlink(missing_ok=True)
+        except OSError as exc:
+            if log:
+                log(f"code_graph stale database could not be removed: {exc}")
+
+    env = os.environ.copy()
+    if harness_dir is not None:
+        env["CLAUDE_HARNESS"] = str(Path(harness_dir).resolve())
+    if invalid_marker is not None:
+        try:
+            invalid_marker.write_text("rebuild pending or failed\n", encoding="utf-8")
+        except OSError as exc:
+            discard_stale_graph()
+            if log:
+                log(f"code_graph build disabled: could not mark graph invalid: {exc}")
+            return False
     try:
         result = subprocess.run(
-            [sys.executable, str(script), "build", project_dir],
+            [sys.executable, "-m", "src.analysis.code_graph", "build", str(project_dir)],
+            cwd=str(SRC_DIR.parent), env=env,
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode == 0:
+            if graph_path is not None and not graph_path.is_file():
+                discard_stale_graph()
+                if log:
+                    log("code_graph build failed: code_graph.db was not produced")
+                return False
+            if invalid_marker is not None:
+                try:
+                    invalid_marker.unlink(missing_ok=True)
+                except OSError as exc:
+                    if log:
+                        log(f"code_graph build unavailable: invalid marker remains: {exc}")
+                    return False
             if log:
                 log(f"code_graph: {result.stdout.strip()}")
+            return True
         else:
+            discard_stale_graph()
             if log:
                 log(f"code_graph build failed (rc={result.returncode}): {result.stderr[:300]}")
     except subprocess.TimeoutExpired:
+        discard_stale_graph()
         if log:
             log("code_graph build timed out (120s) — skipping")
     except Exception as exc:
+        discard_stale_graph()
         if log:
             log(f"code_graph build error: {exc}")
+    return False

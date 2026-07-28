@@ -98,7 +98,9 @@ class TaskExecutor:
             return TaskResult(completed=True)
 
         self._clear_task_artifacts()
-        self.build_code_graph(self.ctx.project_dir, log=self.log)
+        self.build_code_graph(
+            self.ctx.project_dir, log=self.log, harness_dir=self.ctx.harness,
+        )
 
         pipeline = self._task_pipeline(task)
         complexity = self.ctx.get_task_complexity(task)

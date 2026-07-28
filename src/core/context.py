@@ -22,9 +22,9 @@ class PhaseName(str, Enum):
     REPORT_PLAN = "report_plan"
 
 
-DEFAULT_TOOLS = "Read,Write,Glob,Grep,Bash"
-IMPL_TOOLS = "Read,Write,Edit,Glob,Grep,Bash"
-REVIEW_TOOLS = "Read,Write,Glob,Grep,Bash"
+DEFAULT_TOOLS = "Read,Write,Glob,Grep,Bash,CodeGraph"
+IMPL_TOOLS = "Read,Write,Edit,Glob,Grep,Bash,CodeGraph"
+REVIEW_TOOLS = "Read,Write,Glob,Grep,Bash,CodeGraph"
 
 
 @dataclass
@@ -69,6 +69,7 @@ PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
             "RETRIEVED_SKILLS": "retrieved-skills.md",
             "BRAINSTORM": "brainstorm.md",
             "BRIEF": "brief.md",
+            "GRAPH_INSTRUCTIONS": "prompts/graph-instructions.md",
         },
     ),
     PhaseName.GRILL: PhaseConfig(
@@ -198,6 +199,7 @@ PHASE_REGISTRY: dict[PhaseName, PhaseConfig] = {
             "AUDIT": "audit.md",
             "STATUS": "status.md",
             "CONTEXT_HOT": "context-hot.md",
+            "GRAPH_INSTRUCTIONS": "prompts/graph-instructions.md",
         },
     ),
     PhaseName.COMPACT: PhaseConfig(

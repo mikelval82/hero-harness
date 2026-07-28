@@ -42,6 +42,21 @@ def test_phase_prompts_declare_inputs_outputs_and_requires_grad_contract():
         assert not missing, f"{prompt_name} missing signature markers: {missing}"
 
 
+def test_pipeline_agents_and_prompts_use_native_code_graph_only():
+    agent_names = {config.agent for config in PHASE_REGISTRY.values() if config.agent}
+    prompt_names = {config.template for config in PHASE_REGISTRY.values() if config.agent}
+
+    for agent_name in agent_names:
+        text = Path("agents", agent_name).read_text(encoding="utf-8")
+        assert "CodeGraph" in text, agent_name
+        assert "python3 src/analysis/code_graph.py" not in text
+
+    for prompt_name in prompt_names | {"graph-instructions.md"}:
+        text = Path("prompts", prompt_name).read_text(encoding="utf-8")
+        assert "python3 src/analysis/code_graph.py" not in text, prompt_name
+        assert "code graph CLI" not in text, prompt_name
+
+
 def test_evidence_anchoring_contracts_are_declared():
     reviewer = Path("agents/reviewer.md").read_text(encoding="utf-8")
     implementer = Path("agents/implementer.md").read_text(encoding="utf-8")
