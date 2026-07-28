@@ -1,6 +1,22 @@
 # Hardening minimo de alto impacto
 
-**Estado:** especificacion P0 cerrada; implementacion en curso
+**Estado:** P0 implementado; P1 pendiente
+
+## Evidencia de cierre P0
+
+- Implementacion separada en `1cfc05f` (Git), `040aa46` (CodeGraph) y
+  `f7936c5` (fronteras de herramientas).
+- Validacion local en Windows: `866` pruebas de `src/tests` y `111` de
+  `benchmark`, todas correctas.
+- CI [30353836169](https://github.com/mikelval82/hero-harness/actions/runs/30353836169):
+  Ubuntu y Windows correctos.
+- Auditoria final independiente de Git, CodeGraph y permisos: ningun defecto
+  critico o alto pendiente.
+
+Permanece un limite medio excepcional: si el filesystem impide simultaneamente
+crear el marcador de invalidez y eliminar una base CodeGraph obsoleta, no puede
+garantizarse fail-closed absoluto. No bloquea P0 bajo el supuesto fijado de un
+workspace escribible. REVIEW conserva Bash como excepcion visible hasta P1.
 
 ## Objetivo
 
