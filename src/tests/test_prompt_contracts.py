@@ -42,6 +42,42 @@ def test_phase_prompts_declare_inputs_outputs_and_requires_grad_contract():
         assert not missing, f"{prompt_name} missing signature markers: {missing}"
 
 
+def test_pipeline_agents_and_prompts_use_native_code_graph_only():
+    agent_names = {config.agent for config in PHASE_REGISTRY.values() if config.agent}
+    prompt_names = {config.template for config in PHASE_REGISTRY.values() if config.agent}
+
+    for agent_name in agent_names:
+        text = Path("agents", agent_name).read_text(encoding="utf-8")
+        assert "CodeGraph" in text, agent_name
+        assert "python3 src/analysis/code_graph.py" not in text
+
+    for prompt_name in prompt_names | {"graph-instructions.md"}:
+        text = Path("prompts", prompt_name).read_text(encoding="utf-8")
+        assert "python3 src/analysis/code_graph.py" not in text, prompt_name
+        assert "code graph CLI" not in text, prompt_name
+
+
+def test_agent_frontmatter_matches_bash_boundary():
+    without_bash = {
+        "researcher.md", "griller.md", "structurer.md", "specifier.md", "planner.md",
+    }
+    with_bash = {"implementer.md", "reviewer.md"}
+
+    for agent_name in without_bash | with_bash:
+        frontmatter = Path("agents", agent_name).read_text(encoding="utf-8").split("---", 2)[1]
+        tools_line = next(line for line in frontmatter.splitlines() if line.startswith("tools:"))
+        assert ("Bash" in tools_line) is (agent_name in with_bash), agent_name
+
+
+def test_ci_runs_src_and_benchmark_on_linux_and_windows():
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "ubuntu-latest" in workflow
+    assert "windows-latest" in workflow
+    assert "fail-fast: false" in workflow
+    assert "python -m pytest src/tests -q" in workflow
+    assert "python -m pytest benchmark -q" in workflow
+
+
 def test_evidence_anchoring_contracts_are_declared():
     reviewer = Path("agents/reviewer.md").read_text(encoding="utf-8")
     implementer = Path("agents/implementer.md").read_text(encoding="utf-8")

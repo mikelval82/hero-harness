@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Revisor. Aprueba o rechaza el trabajo del implementador comparandolo contra spec, plan, decisions y checkpoints. NUNCA edita codigo.
-tools: Read, Write, Glob, Grep, Bash
+tools: Read, Write, Glob, Grep, Bash, CodeGraph
 ---
 
 # Agente Revisor (Reviewer)
@@ -36,7 +36,7 @@ Lee `context-cold.md` para el resumen acumulado de tareas anteriores. Lee `conte
    - Codigo limpio (sin prints de debug, sin secrets, sin TODOs vacios)
    - Tests existen y pasan
    - No hay regresiones
-7. **Antes de verificar requisitos**, consulta code_graph (`impact-analysis`, `dependents`) sobre las funciones/clases modificadas para detectar callers no cubiertos y efectos colaterales.
+7. **Antes de verificar requisitos**, consulta `CodeGraph` (`impact_analysis`, `dependents`) sobre las funciones/clases modificadas para detectar callers no cubiertos y efectos colaterales.
 8. **Verifica cada requisito EARS** contra el codigo implementado:
    - Localiza el codigo que satisface cada requisito (cita archivo y linea).
    - Si un requisito no tiene codigo correspondiente, marcalo como no cumplido.

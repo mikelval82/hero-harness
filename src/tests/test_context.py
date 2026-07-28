@@ -29,6 +29,7 @@ class TestPhaseConfig:
         assert pc.timeout == 1200
         assert pc.includes == {}
         assert pc.is_conversation is False
+        assert pc.allow_project_writes is False
 
     def test_with_includes(self):
         pc = PhaseConfig(
@@ -96,9 +97,37 @@ class TestPhaseRegistry:
             assert cfg.template, f"{name} has no template"
 
     def test_graph_instructions_phases(self):
-        expected = {"research", "grill", "spec", "plan", "implement", "implement_bursts", "review"}
+        expected = {
+            "research", "grill", "structure", "spec", "plan", "implement",
+            "implement_bursts", "review", "reimplement",
+        }
         actual = {n for n, c in PHASE_REGISTRY.items() if "GRAPH_INSTRUCTIONS" in c.includes}
         assert actual == expected
+
+    def test_code_graph_is_available_to_all_agentic_phases(self):
+        expected = {
+            "research", "grill", "structure", "spec", "plan", "implement",
+            "implement_bursts", "review", "reimplement",
+        }
+        actual = {
+            name for name, config in PHASE_REGISTRY.items()
+            if "CodeGraph" in config.tools.split(",")
+        }
+        assert actual == expected
+
+    def test_project_write_capability_is_explicit_and_minimal(self):
+        allowed = {
+            name for name, config in PHASE_REGISTRY.items()
+            if config.allow_project_writes
+        }
+        assert allowed == {"implement", "implement_bursts", "reimplement"}
+
+    def test_bash_capability_is_explicit_and_minimal(self):
+        allowed = {
+            name for name, config in PHASE_REGISTRY.items()
+            if "Bash" in config.tools.split(",")
+        }
+        assert allowed == {"implement", "implement_bursts", "review", "reimplement"}
 
     def test_project_memory_injected_into_agentic_phases(self):
         expected = {

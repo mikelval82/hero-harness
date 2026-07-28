@@ -57,6 +57,9 @@ Your `## Diagnosis` must cite both the failed feedback and the relevant spec/acc
 ### Hot context (current task findings)
 {{CONTEXT_HOT}}
 
+### Code graph
+{{GRAPH_INSTRUCTIONS}}
+
 ## Required diagnosis gate
 
 Before making any code edit, write or update status.md with a `## Diagnosis` section. Do not modify code until that section exists.

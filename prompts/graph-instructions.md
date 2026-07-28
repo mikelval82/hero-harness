@@ -1,19 +1,27 @@
 ## Code graph
 
-A dependency graph of the codebase is available via CLI. Use it to understand call relationships before modifying code.
+The codebase dependency graph is available through the read-only `CodeGraph`
+tool. Use it first for structural relationships, then confirm relevant details
+with `Read`, `Glob`, or `Grep`.
 
-**Invocation:** `python3 src/analysis/code_graph.py <command> [args]`
+| Action | Required input | Purpose |
+|---|---|---|
+| `find_nodes` | `pattern` | Find node ids by literal, case-insensitive substring |
+| `dependencies` | `node` | Direct callees/dependencies of an exact node id |
+| `dependents` | `node` | Direct callers/dependents of an exact node id |
+| `impact_analysis` | `node` | Transitive callers affected by changing an exact node id |
+| `dead_code` | none | Non-module nodes with zero dependency callers |
 
-**Commands:**
+You may set `limit` from 1 to 200; the default and hard maximum are 200. Do
+not provide shell commands, SQL, database paths, interpreters, or a `build`
+action. Node ids use `filepath:name` for functions, `filepath:Class.method` for
+methods, and `filepath` for modules.
 
-| Command | Description |
-|---|---|
-| `dependencies <node>` | What this node calls (direct callees) |
-| `dependents <node>` | Who calls this node (direct callers) |
-| `impact-analysis <node>` | Transitive impact — all nodes affected by a change |
-| `find-node <pattern>` | Search nodes by substring pattern |
-| `dead-code` | Nodes with zero callers (potential unused code) |
+The runtime builds the graph before task work and rebuilds it immediately
+before every REVIEW, including re-reviews. If the graph is unavailable or the
+requested node is absent, treat the error as recoverable and continue with
+`Read`, `Glob`, and `Grep`.
 
-**Node ID format:** `filepath:name` (functions), `filepath:Class.method` (methods), `filepath` (modules).
-
-**Note:** The graph (`code_graph.db`) is built automatically after the structure phase and rebuilt incrementally before each task. If the build failed (e.g., syntax errors in source files), the graph may not exist and query commands will return an error — this is expected, proceed without it.
+The graph currently covers static Python structure. Dynamic wiring,
+reflection, plugins, runtime dispatch, and other languages may be incomplete;
+graph output is supporting evidence, not the sole source of truth.

@@ -440,8 +440,10 @@ def test_run_phase_multiple_tool_blocks():
     end_resp = _make_response("end_turn", [_text_block("done")])
     client.messages.create.side_effect = [tool_resp, end_resp]
     call_log = []
-    def mock_execute(name, inp, project_dir, harness_dir):
-        call_log.append(name)
+    def mock_execute(
+        name, inp, project_dir, harness_dir, *, allow_project_writes=False,
+    ):
+        call_log.append((name, allow_project_writes))
         return "result_" + name
     with patch("src.agent.loop.execute_tool", side_effect=mock_execute):
         result = run_phase(
@@ -449,9 +451,10 @@ def test_run_phase_multiple_tool_blocks():
             tools=[{"name": "Read"}, {"name": "Glob"}],
             phase_name="test", project_dir=Path("/tmp/proj"),
             harness_dir=Path("/tmp/harness"),
+            allow_project_writes=True,
         )
     assert result.text == "done"
-    assert call_log == ["Read", "Glob"]
+    assert call_log == [("Read", True), ("Glob", True)]
     second_call_msgs = client.messages.create.call_args_list[1][1]["messages"]
     tool_results = second_call_msgs[-1]["content"]
     assert len(tool_results) == 2

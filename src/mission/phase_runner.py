@@ -6,10 +6,12 @@ from src.core.paths import AGENTS_DIR, PROMPTS_DIR
 from src.core.block_state import BlockKind, BlockReason
 from src.core.gate import check_gate
 from src.core.model_policy import select_model_for_phase
+from src.core.context import PhaseName
 from src.agent.tool_schema import TOOL_DEFINITIONS
 from src.agent import loop as agent_loop
 from src.harness.prompt_renderer import render_prompt, load_agent_system
 from src.harness.phase_logger import make_tool_callback, _write_metric
+from src.mission.reporting import build_code_graph
 
 
 class PhaseRunner:
@@ -38,7 +40,7 @@ class PhaseRunner:
             return False
         candidate = Path(raw_path)
         if not candidate.is_absolute():
-            candidate = self.ctx.harness / candidate
+            candidate = Path(self.ctx.project_dir) / candidate
         try:
             return candidate.resolve() == target.resolve()
         except OSError:
@@ -95,6 +97,16 @@ class PhaseRunner:
         if self.blocked.reason:
             return None
 
+        # REVIEW must never inspect the graph from the preceding implementation
+        # state. A failed rebuild removes the stale database and remains
+        # recoverable through Read/Glob/Grep.
+        if config.name == PhaseName.REVIEW:
+            build_code_graph(
+                self.ctx.project_dir,
+                log=log,
+                harness_dir=self.ctx.harness,
+            )
+
         phase_name = phase_name_override or config.name
         print(f"Phase: {phase_name}")
         if log:
@@ -149,6 +161,7 @@ class PhaseRunner:
             "on_log": log,
             "timeout": timeout,
             "model": model_selection.model,
+            "allow_project_writes": config.allow_project_writes,
             **extra,
         }, log=log)
         if phase_result is None or self.blocked.reason:
@@ -210,6 +223,7 @@ class PhaseRunner:
             "timeout": config.timeout,
             "max_turns": config.max_turns,
             "model": model_selection.model,
+            "allow_project_writes": config.allow_project_writes,
         }, log=log)
         if phase_result is None or self.blocked.reason:
             return None

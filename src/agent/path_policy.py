@@ -42,3 +42,27 @@ def _validate_access_path(file_path: str, project_dir: Path, harness_dir: Path) 
 
 def _validate_write_path(file_path: str, project_dir: Path, harness_dir: Path) -> Path:
     return _validate_access_path(file_path, project_dir, harness_dir)
+
+
+def _validate_capability_write_path(
+    file_path: str,
+    project_dir: Path,
+    harness_dir: Path,
+    *,
+    allow_project_writes: bool,
+) -> Path:
+    """Resolve a write path under the phase's explicit capability boundary."""
+    raw_path = Path(file_path)
+    if allow_project_writes:
+        return _validate_write_path(file_path, project_dir, harness_dir)
+    if not raw_path.is_absolute():
+        raise ValueError(
+            "project writes are disabled; use an absolute path inside the harness"
+        )
+    resolved = raw_path.resolve()
+    harness = harness_dir.resolve()
+    if resolved == harness or resolved.is_relative_to(harness):
+        return resolved
+    raise ValueError(
+        f"project writes are disabled; path {resolved} is outside harness {harness}"
+    )

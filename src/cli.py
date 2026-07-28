@@ -24,6 +24,7 @@ from src.integrations.code_questions import CodeQuestionService
 from src.integrations.telegram_lock import TelegramLock
 
 MAX_TASKS = 20
+MUTATING_MODES = frozenset({"full", "focused", "hotfix"})
 
 
 def parse_args(argv=None):
@@ -207,13 +208,31 @@ def main():
 
     _load_env()
     telegram_config = _telegram_config()
+    project_path = Path.cwd().resolve()
+    mutating = args.mode in MUTATING_MODES
+
+    # Validate every resume before setup_harness can write, replace, or create
+    # mission state. Read-only modes intentionally perform no Git operation.
+    if args.resume:
+        _harness_utils.require_resume_harness(args.branch, project_path)
+    if mutating:
+        _git.require_git_repository(project_path)
+        _git.validate_branch_name(args.branch, project_path)
+        if args.resume:
+            _git.require_current_branch(args.branch, project_path)
+        else:
+            _git.require_clean_worktree(project_path)
+        _git.ensure_git_identity(project_path)
 
     # Reset process-global notification hooks before attempting ownership. A
     # second mission that cannot acquire the bot lock must not emit messages.
     _notification.set_notify_backend(_disabled_notify)
     _reporting.set_notify_result_backend(_notifier.notify_result)
 
-    harness_info = _harness_utils.setup_harness(args.branch, args.gate, resume=args.resume, task=args.task)
+    harness_info = _harness_utils.setup_harness(
+        args.branch, args.gate, cwd=project_path,
+        resume=args.resume, task=args.task,
+    )
     harness = harness_info['harness']
     harness_win = harness_info['harness_win']
 
@@ -225,9 +244,10 @@ def main():
     signal.signal(signal.SIGTERM, proc.signal_handler)
     signal.signal(signal.SIGINT, proc.signal_handler)
 
-    _git.ensure_develop()
-    _git.setup_git(args.branch)
-    project_dir = str(Path.cwd())
+    if mutating and not args.resume:
+        _git.ensure_develop(project_path)
+        _git.setup_branch(args.branch, project_path)
+    project_dir = str(project_path)
 
     client = _create_client()
 

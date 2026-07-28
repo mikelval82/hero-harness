@@ -23,7 +23,12 @@ from src.core.notification import notify
 from src.mission.reporting import _consolidate_tasks, build_code_graph, notify_result
 from src.mission.phase_runner import PhaseRunner
 from src.mission.runner import MissionRunner, create_runner
-from src.harness.harness_utils import sanitize_name as _sanitize_name, setup_harness
+from src.harness.harness_utils import (
+    harness_path,
+    require_resume_harness,
+    sanitize_name as _sanitize_name,
+    setup_harness,
+)
 from src.harness.tasks import (
     parse_status_files as _parse_status_files,
     update_task as _update_task,
@@ -35,7 +40,9 @@ from src.harness.tasks import (
 from src.harness.telemetry import read_events, write_phase_event
 from src.integrations.notifier import PROJECT_COLORS, compute_notify_prefix
 from src.agent.loop import PhaseResult, PhaseTimeout
-from src.core.context import DEFAULT_TOOLS, PHASE_REGISTRY, MissionContext, PhaseConfig
+from src.core.context import (
+    DEFAULT_TOOLS, REVIEW_TOOLS, PHASE_REGISTRY, MissionContext, PhaseConfig,
+)
 import src.agent.loop as _al
 from src.mission import reporting as reporting_mod
 from src.mission import phase_runner as phase_runner_mod
@@ -387,8 +394,13 @@ def test_ensure_git_identity_already_set(monkeypatch):
         return m
 
     monkeypatch.setattr("src.core.git.subprocess.run", fake_run)
+    monkeypatch.delenv("GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("GIT_AUTHOR_EMAIL", raising=False)
     ensure_git_identity()
-    assert len(calls) == 1
+    assert calls == [
+        ["git", "config", "--get", "user.name"],
+        ["git", "config", "--get", "user.email"],
+    ]
 
 
 def test_ensure_git_identity_sets_from_env(monkeypatch):
@@ -397,16 +409,17 @@ def test_ensure_git_identity_sets_from_env(monkeypatch):
     def fake_run(cmd, **kw):
         calls.append(cmd)
         m = MagicMock()
-        m.returncode = 1 if len(calls) == 1 else 0
+        m.returncode = 0
         return m
 
     monkeypatch.setattr("src.core.git.subprocess.run", fake_run)
     monkeypatch.setenv("GIT_AUTHOR_NAME", "Test User")
     monkeypatch.setenv("GIT_AUTHOR_EMAIL", "test@example.com")
     ensure_git_identity()
-    assert len(calls) == 3
-    assert calls[1] == ["git", "config", "--global", "user.name", "Test User"]
-    assert calls[2] == ["git", "config", "--global", "user.email", "test@example.com"]
+    assert calls == [
+        ["git", "config", "--local", "user.name", "Test User"],
+        ["git", "config", "--local", "user.email", "test@example.com"],
+    ]
 
 
 def test_ensure_git_identity_raises_without_env(monkeypatch):
@@ -432,6 +445,8 @@ def test_setup_branch_created(monkeypatch):
         return m
 
     monkeypatch.setattr("src.core.git.subprocess.run", fake_run)
+    monkeypatch.setattr("src.core.git.validate_branch_name", lambda branch, cwd=None: branch)
+    monkeypatch.setattr("src.core.git.require_current_branch", lambda branch, cwd=None: branch)
     assert setup_branch("feat-x") == "created"
 
 
@@ -445,6 +460,8 @@ def test_setup_branch_existing(monkeypatch):
         return m
 
     monkeypatch.setattr("src.core.git.subprocess.run", fake_run)
+    monkeypatch.setattr("src.core.git.validate_branch_name", lambda branch, cwd=None: branch)
+    monkeypatch.setattr("src.core.git.require_current_branch", lambda branch, cwd=None: branch)
     assert setup_branch("feat-x") == "existing"
 
 
@@ -504,6 +521,7 @@ def test_setup_harness_basic(tmp_path, save_env, monkeypatch):
     assert "mission_tag" not in result
     assert result["harness"].exists()
     assert (result["harness"] / "_project_dir").read_text(encoding="utf-8") == str(tmp_path.resolve())
+    assert (result["harness"] / "_branch").read_text(encoding="utf-8") == "feat-x"
     assert (result["harness"] / "_gate_mode").read_text(encoding="utf-8") == "auto"
     assert (result["harness"] / "project-memory.md").is_file()
     assert (result["harness"] / "_project_memory_path").is_file()
@@ -532,10 +550,27 @@ def test_setup_harness_preexisting_dir(tmp_path, save_env, monkeypatch):
     monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
     harness_dir = tmp_path / ".harness" / _sanitize_name(tmp_path.name) / "feat-x"
     harness_dir.mkdir(parents=True)
+    (harness_dir / "_project_dir").write_text(str(tmp_path.resolve()), encoding="utf-8")
+    (harness_dir / "_branch").write_text("feat-x", encoding="utf-8")
     (harness_dir / "old_file.txt").write_text("old", encoding="utf-8")
     result = setup_harness("feat-x", False, cwd=tmp_path)
     assert not (result["harness"] / "old_file.txt").exists()
     assert (result["harness"] / "_project_dir").exists()
+
+
+def test_setup_harness_preserves_unowned_preexisting_dir(
+    tmp_path, save_env, monkeypatch,
+):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    harness_dir = tmp_path / ".harness" / _sanitize_name(tmp_path.name) / "feat-x"
+    harness_dir.mkdir(parents=True)
+    sentinel = harness_dir / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="ownership markers"):
+        setup_harness("feat-x", False, cwd=tmp_path)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
 
 
 def test_setup_harness_resume_preserves_staged_project_memory(tmp_path, save_env, monkeypatch):
@@ -552,6 +587,79 @@ def test_setup_harness_resume_preserves_staged_project_memory(tmp_path, save_env
     assert (resumed["harness"] / "project-memory.md").read_text(encoding="utf-8") == "mission-local memory\n"
     assert (resumed["harness"] / "retrieved-cases.md").read_text(encoding="utf-8") == "mission-local cases\n"
     assert (resumed["harness"] / "retrieved-skills.md").read_text(encoding="utf-8") == "mission-local skills\n"
+
+
+def test_setup_harness_invalid_resume_preserves_workspace(tmp_path, save_env, monkeypatch):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    first = setup_harness("feat-x", False, cwd=tmp_path)
+    sentinel = first["harness"] / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="tasks.json"):
+        setup_harness("feat-x", False, cwd=tmp_path, resume=True)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_resume_rejects_sanitized_branch_collision(tmp_path, save_env, monkeypatch):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    first = setup_harness("feature/foo", False, cwd=tmp_path)
+    (first["harness"] / "tasks.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="belongs to branch"):
+        require_resume_harness("feature-foo", cwd=tmp_path)
+
+
+def test_new_mission_rejects_branch_collision_without_deleting(
+    tmp_path, save_env, monkeypatch,
+):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    first = setup_harness("feature/foo", False, cwd=tmp_path)
+    sentinel = first["harness"] / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="owned by"):
+        setup_harness("feature-foo", False, cwd=tmp_path)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_resume_rejects_project_name_collision(tmp_path, save_env, monkeypatch):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    first_project = tmp_path / "one" / "same-name"
+    second_project = tmp_path / "two" / "same-name"
+    first_project.mkdir(parents=True)
+    second_project.mkdir(parents=True)
+    first = setup_harness("feat-x", False, cwd=first_project)
+    (first["harness"] / "tasks.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="workspace belongs to"):
+        require_resume_harness("feat-x", cwd=second_project)
+
+
+def test_new_mission_rejects_project_collision_without_deleting(
+    tmp_path, save_env, monkeypatch,
+):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+    first_project = tmp_path / "one" / "same-name"
+    second_project = tmp_path / "two" / "same-name"
+    first_project.mkdir(parents=True)
+    second_project.mkdir(parents=True)
+    first = setup_harness("feat-x", False, cwd=first_project)
+    sentinel = first["harness"] / "sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="owned by"):
+        setup_harness("feat-x", False, cwd=second_project)
+
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+def test_harness_path_rejects_empty_sanitized_component(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.harness.harness_utils.Path.home", staticmethod(lambda: tmp_path))
+
+    with pytest.raises(RuntimeError, match="at least one ASCII"):
+        harness_path("ñ", cwd=tmp_path)
 
 
 def test_setup_harness_claude_home_path(tmp_path, save_env, monkeypatch):
@@ -1164,15 +1272,18 @@ def test_stage_task_files_with_files(tmp_path, monkeypatch):
     (tmp_path / "src" / "b.py").write_text("b", encoding="utf-8")
 
     calls = []
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return MagicMock(returncode=0, stdout="", stderr="")
     monkeypatch.setattr(tasks_mod, "subprocess", type("M", (), {
-        "run": staticmethod(lambda cmd, **kw: calls.append(cmd))
+        "run": staticmethod(fake_run)
     })())
     monkeypatch.chdir(tmp_path)
 
     stage_task_files(h)
     assert len(calls) == 2
-    assert calls[0] == ["git", "add", "src/a.py"]
-    assert calls[1] == ["git", "add", "src/b.py"]
+    assert calls[0] == ["git", "add", "--", "src/a.py"]
+    assert calls[1] == ["git", "add", "--", "src/b.py"]
 
 
 def test_stage_task_files_no_files(tmp_path, monkeypatch):
@@ -1478,8 +1589,14 @@ def _mock_orchestration(monkeypatch, harness):
     harness.mkdir(exist_ok=True)
     (harness / "_gate_mode").write_text("auto", encoding="utf-8")
     monkeypatch.setattr(mission, "_load_env", lambda: None)
-    monkeypatch.setattr("src.core.git.ensure_develop", lambda: "existing")
-    monkeypatch.setattr("src.core.git.setup_git", lambda b: "existing")
+    monkeypatch.setattr("src.core.git.require_git_repository", lambda *a: Path.cwd())
+    monkeypatch.setattr("src.core.git.validate_branch_name", lambda branch, *a: branch)
+    monkeypatch.setattr("src.core.git.require_clean_worktree", lambda *a: None)
+    monkeypatch.setattr("src.core.git.require_current_branch", lambda *a: a[0])
+    monkeypatch.setattr("src.core.git.ensure_git_identity", lambda *a: None)
+    monkeypatch.setattr("src.core.git.ensure_develop", lambda *a: "existing")
+    monkeypatch.setattr("src.core.git.setup_branch", lambda *a: "existing")
+    monkeypatch.setattr("src.harness.harness_utils.require_resume_harness", lambda *a: harness)
     monkeypatch.setattr(mission, "_create_client", lambda: MagicMock())
     monkeypatch.setattr(mission_runner_mod, "notify", lambda msg: None)
     monkeypatch.setattr(hitl_mod, "notify", lambda msg: None)
@@ -1634,6 +1751,157 @@ def test_telegram_config_requires_token_and_chat_together(monkeypatch):
         mission._telegram_config()
 
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("mode", ["explore", "spec", "spec-plan"])
+def test_read_only_modes_perform_no_git_operations(
+    mode, tmp_path, monkeypatch, reset_blocked, save_env,
+):
+    harness = tmp_path / "harness"
+    fake_info = {
+        "harness": harness, "harness_win": str(harness),
+        "project_name": "proj", "branch_safe": "br",
+    }
+    ns = argparse.Namespace(
+        task="inspect", branch="br", mode=mode, no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    monkeypatch.setattr(mission._harness_utils, "setup_harness", lambda *a, **kw: fake_info)
+    _mock_orchestration(monkeypatch, harness)
+    git_calls = []
+    for name in (
+        "require_git_repository", "validate_branch_name", "require_clean_worktree", "require_current_branch",
+        "ensure_git_identity", "ensure_develop", "setup_branch",
+    ):
+        monkeypatch.setattr(mission._git, name, lambda *a, _name=name, **kw: git_calls.append(_name))
+    monkeypatch.setattr(mission, "atexit", MagicMock())
+    monkeypatch.setattr(mission, "signal", MagicMock())
+
+    mission.main()
+
+    assert git_calls == []
+
+
+def test_mutating_preflight_precedes_workspace_and_checkout(
+    tmp_path, monkeypatch, reset_blocked, save_env,
+):
+    harness = tmp_path / "harness"
+    fake_info = {
+        "harness": harness, "harness_win": str(harness),
+        "project_name": "proj", "branch_safe": "br",
+    }
+    ns = argparse.Namespace(
+        task="change", branch="br", mode="full", no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    _mock_orchestration(monkeypatch, harness)
+    (harness / "tasks.json").write_text("[]", encoding="utf-8")
+    events = []
+    monkeypatch.setattr(mission._git, "require_git_repository", lambda *a: events.append("repo"))
+    monkeypatch.setattr(mission._git, "validate_branch_name", lambda *a: events.append("branch-valid"))
+    monkeypatch.setattr(mission._git, "require_clean_worktree", lambda *a: events.append("clean"))
+    monkeypatch.setattr(mission._git, "ensure_git_identity", lambda *a: events.append("identity"))
+    monkeypatch.setattr(mission._harness_utils, "setup_harness", lambda *a, **kw: events.append("workspace") or fake_info)
+    monkeypatch.setattr(mission._git, "ensure_develop", lambda *a: events.append("develop"))
+    monkeypatch.setattr(mission._git, "setup_branch", lambda *a: events.append("branch"))
+    monkeypatch.setattr(mission, "atexit", MagicMock())
+    monkeypatch.setattr(mission, "signal", MagicMock())
+
+    mission.main()
+
+    assert events[:7] == [
+        "repo", "branch-valid", "clean", "identity", "workspace", "develop", "branch",
+    ]
+
+
+def test_failed_preflight_does_not_touch_workspace(tmp_path, monkeypatch, save_env):
+    ns = argparse.Namespace(
+        task="change", branch="br", mode="hotfix", no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    monkeypatch.setattr(mission, "_load_env", lambda: None)
+    monkeypatch.delenv("TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setattr(mission._git, "require_git_repository", lambda *a: tmp_path)
+    monkeypatch.setattr(mission._git, "validate_branch_name", lambda branch, *a: branch)
+    monkeypatch.setattr(
+        mission._git, "require_clean_worktree",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("dirty")),
+    )
+    setup = MagicMock()
+    monkeypatch.setattr(mission._harness_utils, "setup_harness", setup)
+
+    with pytest.raises(RuntimeError, match="dirty"):
+        mission.main()
+
+    setup.assert_not_called()
+
+
+def test_invalid_branch_does_not_touch_workspace(tmp_path, monkeypatch, save_env):
+    ns = argparse.Namespace(
+        task="change", branch="@{-1}", mode="full", no_grill=False,
+        resume=False, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    monkeypatch.setattr(mission, "_load_env", lambda: None)
+    monkeypatch.delenv("TELEGRAM_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+    monkeypatch.setattr(mission._git, "require_git_repository", lambda *a: tmp_path)
+    monkeypatch.setattr(
+        mission._git, "validate_branch_name",
+        lambda *a: (_ for _ in ()).throw(RuntimeError("ambiguous branch")),
+    )
+    setup = MagicMock()
+    monkeypatch.setattr(mission._harness_utils, "setup_harness", setup)
+
+    with pytest.raises(RuntimeError, match="ambiguous branch"):
+        mission.main()
+
+    setup.assert_not_called()
+
+
+def test_mutating_resume_validates_without_checkout(
+    tmp_path, monkeypatch, reset_blocked, save_env,
+):
+    harness = tmp_path / "harness"
+    fake_info = {
+        "harness": harness, "harness_win": str(harness),
+        "project_name": "proj", "branch_safe": "br",
+    }
+    ns = argparse.Namespace(
+        task="continue", branch="br", mode="focused", no_grill=False,
+        resume=True, gate=False, task_file=None, max_tasks=8,
+    )
+    monkeypatch.setattr(mission, "parse_args", lambda: ns)
+    monkeypatch.setattr(mission, "resolve_args", lambda a: None)
+    _mock_orchestration(monkeypatch, harness)
+    (harness / "tasks.json").write_text("[]", encoding="utf-8")
+    events = []
+    monkeypatch.setattr(mission._harness_utils, "require_resume_harness", lambda *a: events.append("resume"))
+    monkeypatch.setattr(mission._git, "require_git_repository", lambda *a: events.append("repo"))
+    monkeypatch.setattr(mission._git, "validate_branch_name", lambda *a: events.append("branch-valid"))
+    monkeypatch.setattr(mission._git, "require_current_branch", lambda *a: events.append("branch-check"))
+    monkeypatch.setattr(mission._git, "ensure_git_identity", lambda *a: events.append("identity"))
+    monkeypatch.setattr(mission._harness_utils, "setup_harness", lambda *a, **kw: events.append("workspace") or fake_info)
+    checkout = MagicMock()
+    monkeypatch.setattr(mission._git, "ensure_develop", checkout)
+    monkeypatch.setattr(mission._git, "setup_branch", checkout)
+    monkeypatch.setattr(mission, "atexit", MagicMock())
+    monkeypatch.setattr(mission, "signal", MagicMock())
+
+    mission.main()
+
+    assert events[:6] == [
+        "resume", "repo", "branch-valid", "branch-check", "identity", "workspace",
+    ]
+    checkout.assert_not_called()
 
 
 def test_telegram_config_requires_private_chat_id(monkeypatch):
@@ -2110,6 +2378,7 @@ def test_auto_branch_name_from_task():
 
 def test_build_code_graph_success(monkeypatch):
     logs = []
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     fake_result = subprocess.CompletedProcess(
         args=[], returncode=0, stdout="Built graph: 42 nodes, 10 edges", stderr=""
     )
@@ -2128,6 +2397,21 @@ def test_build_code_graph_failure(monkeypatch):
     build_code_graph("/project", log=lambda m: logs.append(m))
     assert len(logs) == 1
     assert "failed" in logs[0]
+
+
+def test_build_code_graph_failure_discards_stale_database(tmp_path, monkeypatch):
+    harness = tmp_path / "harness"
+    harness.mkdir()
+    stale = harness / "code_graph.db"
+    stale.write_bytes(b"stale")
+    fake_result = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr="parse failed",
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
+
+    assert build_code_graph(tmp_path, harness_dir=harness) is False
+    assert not stale.exists()
+    assert (harness / "code_graph.invalid").is_file()
 
 
 def test_build_code_graph_timeout(monkeypatch):
@@ -2151,24 +2435,38 @@ def test_build_code_graph_exception(monkeypatch):
 
 
 def test_build_code_graph_no_log(monkeypatch):
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     fake_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: fake_result)
     build_code_graph("/project")
 
 
 def test_build_code_graph_passes_correct_args(monkeypatch):
+    monkeypatch.delenv("CLAUDE_HARNESS", raising=False)
     captured = []
     def capture_run(*args, **kwargs):
-        captured.append(args[0])
+        captured.append((args[0], kwargs))
         return subprocess.CompletedProcess(args=[], returncode=0, stdout="ok", stderr="")
     monkeypatch.setattr(subprocess, "run", capture_run)
     build_code_graph("/my/project", log=lambda m: None)
     assert len(captured) == 1
-    cmd = captured[0]
+    cmd, kwargs = captured[0]
     assert cmd[0] == sys.executable
-    assert "code_graph.py" in cmd[1]
-    assert cmd[2] == "build"
-    assert cmd[3] == "/my/project"
+    assert cmd[1:4] == ["-m", "src.analysis.code_graph", "build"]
+    assert cmd[4] == "/my/project"
+    assert kwargs["cwd"] == str(Path(mission_runner_mod.__file__).resolve().parents[2])
+
+
+def test_build_code_graph_supports_external_target(tmp_path):
+    target = tmp_path / "external-target"
+    harness = tmp_path / "harness"
+    target.mkdir()
+    harness.mkdir()
+    (target / "app.py").write_text("def answer():\n    return 42\n", encoding="utf-8")
+
+    assert build_code_graph(target, harness_dir=harness) is True
+    assert (harness / "code_graph.db").is_file()
+    assert not (target / "src" / "analysis" / "code_graph.py").exists()
 
 
 # --- PhaseRunner tests ---
@@ -2228,6 +2526,61 @@ def test_phase_runner_resolve_includes_extra(tmp_path):
     assert resolved["EXTRA"] == "/custom/path"
 
 
+def test_phase_runner_rebuilds_before_every_review(
+    tmp_path, monkeypatch, mock_deferred_imports,
+):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="review", agent="", template="review-prompt.md", gate=None,
+        tools=REVIEW_TOOLS, max_turns=10,
+    )
+    events = []
+    monkeypatch.setattr(
+        phase_runner_mod, "build_code_graph",
+        lambda *a, **kw: events.append("rebuild") or True,
+    )
+    mock_deferred_imports["agent_run"].side_effect = lambda **kw: (
+        events.append("review") or PhaseResult(
+            text="done", turns=1, elapsed=0.1, input_tokens=1, output_tokens=1,
+        )
+    )
+
+    runner.run(config, {})
+    runner.run(config, {})
+
+    assert events == ["rebuild", "review", "rebuild", "review"]
+    assert all(
+        call.kwargs["allow_project_writes"] is False
+        for call in mock_deferred_imports["agent_run"].call_args_list
+    )
+
+
+def test_phase_runner_conversation_propagates_write_capability(tmp_path, monkeypatch):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="grill", agent="griller.md", template="grill-prompt.md", gate=None,
+        tools=DEFAULT_TOOLS, max_turns=10,
+    )
+    captured = {}
+    monkeypatch.setattr(phase_runner_mod, "render_prompt", lambda *a, **kw: "prompt")
+    monkeypatch.setattr(phase_runner_mod, "load_agent_system", lambda *a, **kw: "system")
+    monkeypatch.setattr(phase_runner_mod, "make_tool_callback", lambda *a, **kw: None)
+    monkeypatch.setattr(phase_runner_mod, "_write_metric", lambda *a, **kw: None)
+
+    def fake_conversation(**kwargs):
+        captured.update(kwargs)
+        return PhaseResult(
+            text="done", turns=1, elapsed=0.1, input_tokens=1, output_tokens=1,
+        )
+
+    monkeypatch.setattr(phase_runner_mod.agent_loop, "run_conversation", fake_conversation)
+
+    assert runner.run_conversation(config, {}, lambda _prompt: "done") == "done"
+    assert captured["allow_project_writes"] is False
+
+
 def test_phase_runner_status_artifact_stop_condition(tmp_path):
     ctx = _make_ctx(tmp_path)
     runner = PhaseRunner(MagicMock(), ctx, BlockState())
@@ -2264,6 +2617,21 @@ def test_phase_runner_status_artifact_stop_condition_ignores_other_files(tmp_pat
     assert should_stop([block]) is False
 
 
+def test_phase_runner_relative_write_path_uses_project_semantics(tmp_path):
+    ctx = _make_ctx(tmp_path)
+    runner = PhaseRunner(MagicMock(), ctx, BlockState())
+    config = PhaseConfig(
+        name="grill", agent="", template="t.md", gate="brief.md",
+        tools=DEFAULT_TOOLS, max_turns=10,
+    )
+    (ctx.harness / "brief.md").write_text("STATUS: DONE\n", encoding="utf-8")
+    block = MagicMock()
+    block.name = "Write"
+    block.input = {"file_path": "brief.md"}
+
+    assert runner._status_artifact_stop_condition(config)([block]) is False
+
+
 def test_phase_runner_run_blocked(tmp_path, reset_blocked, mock_deferred_imports):
     blocked = BlockState()
     blocked.reason = BlockReason(BlockKind.TIMEOUT, phase="already")
@@ -2286,6 +2654,7 @@ def test_phase_runner_run_happy(tmp_path, mock_deferred_imports):
     assert result == "PHASE_RESULT"
     mock_deferred_imports["agent_run"].assert_called_once()
     assert mock_deferred_imports["agent_run"].call_args[1]["model"] == "claude-sonnet-4-6"
+    assert mock_deferred_imports["agent_run"].call_args[1]["allow_project_writes"] is False
 
 
 def test_phase_runner_run_timeout(tmp_path, reset_blocked, mock_deferred_imports):
@@ -2347,6 +2716,7 @@ def test_phase_runner_run_overrides(tmp_path, mock_deferred_imports):
     assert call_kwargs["phase_name"] == "implement[t]#1"
     assert call_kwargs["timeout"] == 300
     assert call_kwargs["max_turns"] == 20
+    assert call_kwargs["allow_project_writes"] is True
 
 
 def test_phase_runner_routes_large_task_to_deep_model(tmp_path, mock_deferred_imports):

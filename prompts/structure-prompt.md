@@ -32,6 +32,10 @@ Use retrieved skills only as procedural guidance for task shape and verification
 
 {{BRIEF}}
 
+## Code graph
+
+{{GRAPH_INSTRUCTIONS}}
+
 Complexity routing:
 - Every task in `tasks.json` must include `complexity` and `complexity_reason`.
 - Use `S` only for small, low-risk, well-scoped edits where implement-only is enough.

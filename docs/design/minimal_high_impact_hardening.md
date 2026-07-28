@@ -1,6 +1,22 @@
 # Hardening minimo de alto impacto
 
-**Estado:** propuesta
+**Estado:** P0 implementado; P1 pendiente
+
+## Evidencia de cierre P0
+
+- Implementacion separada en `1cfc05f` (Git), `040aa46` (CodeGraph) y
+  `f7936c5` (fronteras de herramientas).
+- Validacion local en Windows: `866` pruebas de `src/tests` y `111` de
+  `benchmark`, todas correctas.
+- CI [30353836169](https://github.com/mikelval82/hero-harness/actions/runs/30353836169):
+  Ubuntu y Windows correctos.
+- Auditoria final independiente de Git, CodeGraph y permisos: ningun defecto
+  critico o alto pendiente.
+
+Permanece un limite medio excepcional: si el filesystem impide simultaneamente
+crear el marcador de invalidez y eliminar una base CodeGraph obsoleta, no puede
+garantizarse fail-closed absoluto. No bloquea P0 bajo el supuesto fijado de un
+workspace escribible. REVIEW conserva Bash como excepcion visible hasta P1.
 
 ## Objetivo
 
@@ -21,6 +37,25 @@ El objetivo no es convertir HERO en una sandbox de proposito general. El
 implementer necesita ejecutar codigo del proyecto y, por tanto, el target debe
 seguir considerandose confiable. La mejora consiste en reducir la superficie de
 riesgo y hacer que el runtime cumpla las restricciones que ya declara.
+
+## Decisiones P0 cerradas
+
+Estas decisiones forman el gate de implementacion y no quedan abiertas a
+interpretacion durante los tres commits de hardening:
+
+| Frontera | Decision definitiva |
+|---|---|
+| Escritura | `PhaseConfig.allow_project_writes=False` por defecto. Solo `implement`, `implement_bursts` y `reimplement` pueden escribir en el target; las demas fases solo pueden escribir artefactos dentro del harness. |
+| Code graph | La herramienta nativa conserva exactamente `find_nodes`, `dependencies`, `dependents`, `impact_analysis` y `dead_code`, con fallback recuperable a `Read`/`Glob`/`Grep`. |
+| Bash analitico | `research`, `grill`, `structure`, `spec` y `plan` pierden Bash una vez migradas sus consultas al grafo estructurado. |
+| REVIEW | Conserva Bash como excepcion P0 documentada, pero todos sus procesos hijos reciben el entorno sin credenciales de HERO. |
+| Modos Git | `full`, `focused` y `hotfix` son mutantes. `explore`, `spec` y `spec-plan` no ejecutan ninguna operacion Git. |
+| Resume | Un `--resume` mutante exige un workspace valido de ese proyecto y branch, HEAD adjunto y coincidencia exacta de branch; nunca hace checkout implicito. |
+
+La implementacion se divide en tres commits independientes (`git`, `graph` y
+`tools`) con pruebas deterministas por bloque y una unica auditoria global al
+final. REVIEW conserva Bash; sustituirlo por una validacion mas estrecha queda
+explicitamente en P1.
 
 ## Principios de la solucion
 
@@ -180,8 +215,10 @@ Exponer una herramienta estructurada cuyo input no sea un comando shell:
 
 ```text
 CodeGraph(
-    operation = find_node | dependencies | dependents | impact_analysis | dead_code,
-    query = <simbolo o patron, cuando aplique>
+    action = find_nodes | dependencies | dependents | impact_analysis | dead_code,
+    pattern = <substring literal, solo para find_nodes>,
+    node = <id exacto, solo para recorridos>,
+    limit = <1..200, opcional>
 )
 ```
 

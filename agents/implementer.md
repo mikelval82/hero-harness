@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Implementador. Ejecuta UNA tarea del plan escribiendo codigo, tests y actualizando status. No se auto-aprueba.
-tools: Read, Write, Edit, Glob, Grep, Bash
+tools: Read, Write, Edit, Glob, Grep, Bash, CodeGraph
 ---
 
 # Agente Implementador (Implementer)
@@ -24,7 +24,7 @@ desde inicio hasta verificacion.
 1b. **Si un skill recuperado aplica**, siguelo como procedimiento verificado y registra evidencia de los pasos relevantes en `status.md`; ignora skills que no apliquen.
 2. **Lee** `$CLAUDE_HARNESS/context-cold.md` para el resumen acumulado de tareas anteriores. Luego lee `$CLAUDE_HARNESS/context-hot.md` para hallazgos de la fase actual. Solo explora archivos que no esten ya cubiertos.
 3. **Si existe** `~/.claude/CONTEXT.md`, leelo para usar el vocabulario compartido.
-3b. **Antes de modificar codigo**, consulta code_graph (`dependents`, `impact-analysis`) para identificar callers y efectos colaterales. Esto es prioritario sobre Grep/Glob para entender impacto.
+3b. **Antes de modificar codigo**, consulta `CodeGraph` (`dependents`, `impact_analysis`) para identificar callers y efectos colaterales. Esto es prioritario sobre Grep/Glob para entender impacto.
 4. **Crea** `$CLAUDE_HARNESS/status.md` desde cero con los pasos del plan y su estado inicial (pendiente).
 4b. **Registra routing** al inicio de `$CLAUDE_HARNESS/status.md` en una seccion `## Routing` con `task_complexity`, `task_pipeline` y `complexity_reason` recibidos en el prompt.
 5. **Ejecuta** los pasos del plan en orden:

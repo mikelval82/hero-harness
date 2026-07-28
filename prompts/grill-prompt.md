@@ -27,6 +27,6 @@ TASK: {{TASK}}
 
 {{GRAPH_INSTRUCTIONS}}
 
-Use Read, Grep, Glob, and the code graph CLI to verify your assumptions against the actual codebase before asking the user.
+Use Read, Grep, Glob, and `CodeGraph` to verify your assumptions against the actual codebase before asking the user.
 
 When the user says /done, write brief.md to $CLAUDE_HARNESS following your protocol.

@@ -81,7 +81,10 @@ def test_read_path_traversal_rejected(project_dir, harness_dir, tmp_path):
 
 def test_write_inside_project(project_dir, harness_dir):
     target = project_dir / "out.txt"
-    result = execute_tool("Write", {"file_path": str(target), "content": "hello"}, project_dir, harness_dir)
+    result = execute_tool(
+        "Write", {"file_path": str(target), "content": "hello"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
     assert "Successfully" in result
     assert target.read_text() == "hello"
 
@@ -95,22 +98,103 @@ def test_write_inside_harness(project_dir, harness_dir):
 
 def test_write_outside_rejected(project_dir, harness_dir, tmp_path):
     target = tmp_path / "outside.txt"
-    result = execute_tool("Write", {"file_path": str(target), "content": "bad"}, project_dir, harness_dir)
+    result = execute_tool(
+        "Write", {"file_path": str(target), "content": "bad"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
     assert result.startswith("Error:")
     assert not target.exists()
 
 
 def test_write_creates_parents(project_dir, harness_dir):
     target = project_dir / "sub" / "deep" / "file.txt"
-    result = execute_tool("Write", {"file_path": str(target), "content": "nested"}, project_dir, harness_dir)
+    result = execute_tool(
+        "Write", {"file_path": str(target), "content": "nested"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
     assert "Successfully" in result
     assert target.read_text() == "nested"
 
 
 def test_write_path_traversal(project_dir, harness_dir):
     evil = str(project_dir / ".." / ".." / "evil.txt")
-    result = execute_tool("Write", {"file_path": evil, "content": "pwned"}, project_dir, harness_dir)
+    result = execute_tool(
+        "Write", {"file_path": evil, "content": "pwned"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
     assert result.startswith("Error:")
+
+
+def test_project_write_is_denied_by_default(project_dir, harness_dir):
+    target = project_dir / "denied.txt"
+    result = execute_tool(
+        "Write", {"file_path": str(target), "content": "blocked"},
+        project_dir, harness_dir,
+    )
+    assert "project writes are disabled" in result
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("relative_path", ["out.txt", "../harness/out.txt"])
+def test_restricted_write_requires_explicit_harness_path(
+    relative_path, project_dir, harness_dir,
+):
+    result = execute_tool(
+        "Write", {"file_path": relative_path, "content": "blocked"},
+        project_dir, harness_dir,
+    )
+    assert "absolute path inside the harness" in result
+    assert not (harness_dir / "out.txt").exists()
+    assert not (project_dir / "out.txt").exists()
+
+
+def test_allowed_relative_write_targets_project(project_dir, harness_dir):
+    result = execute_tool(
+        "Write", {"file_path": "relative.txt", "content": "allowed"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
+    assert "Successfully" in result
+    assert (project_dir / "relative.txt").read_text(encoding="utf-8") == "allowed"
+
+
+def test_restricted_write_rejects_file_symlink_escape(
+    project_dir, harness_dir, tmp_path,
+):
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    link = harness_dir / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = execute_tool(
+        "Edit", {
+            "file_path": str(link), "old_string": "secret", "new_string": "changed",
+        },
+        project_dir, harness_dir,
+    )
+    assert result.startswith("Error:")
+    assert outside.read_text(encoding="utf-8") == "secret"
+
+
+def test_write_rejects_directory_symlink_escape_when_enabled(
+    project_dir, harness_dir, tmp_path,
+):
+    outside = tmp_path / "outside-dir"
+    outside.mkdir()
+    link = project_dir / "linked-dir"
+    try:
+        link.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
+
+    result = execute_tool(
+        "Write", {"file_path": str(link / "pwned.txt"), "content": "blocked"},
+        project_dir, harness_dir, allow_project_writes=True,
+    )
+    assert result.startswith("Error:")
+    assert not (outside / "pwned.txt").exists()
 
 
 # --- Edit tests ---
@@ -120,7 +204,7 @@ def test_edit_single_replace(project_dir, harness_dir):
     f.write_text("def foo():\n    pass\n")
     result = execute_tool("Edit", {
         "file_path": str(f), "old_string": "foo", "new_string": "bar"
-    }, project_dir, harness_dir)
+    }, project_dir, harness_dir, allow_project_writes=True)
     assert "Replaced 1" in result
     assert "bar" in f.read_text()
 
@@ -130,7 +214,7 @@ def test_edit_replace_all(project_dir, harness_dir):
     f.write_text("aaa bbb aaa ccc aaa\n")
     result = execute_tool("Edit", {
         "file_path": str(f), "old_string": "aaa", "new_string": "xxx", "replace_all": True
-    }, project_dir, harness_dir)
+    }, project_dir, harness_dir, allow_project_writes=True)
     assert "Replaced 3" in result
     assert f.read_text() == "xxx bbb xxx ccc xxx\n"
 
@@ -140,7 +224,7 @@ def test_edit_ambiguous_rejected(project_dir, harness_dir):
     f.write_text("hello hello hello\n")
     result = execute_tool("Edit", {
         "file_path": str(f), "old_string": "hello", "new_string": "bye"
-    }, project_dir, harness_dir)
+    }, project_dir, harness_dir, allow_project_writes=True)
     assert result.startswith("Error:")
     assert "3 times" in result
     assert f.read_text() == "hello hello hello\n"
@@ -151,7 +235,7 @@ def test_edit_not_found(project_dir, harness_dir):
     f.write_text("some content\n")
     result = execute_tool("Edit", {
         "file_path": str(f), "old_string": "missing", "new_string": "x"
-    }, project_dir, harness_dir)
+    }, project_dir, harness_dir, allow_project_writes=True)
     assert result.startswith("Error:")
     assert "not found" in result
 
@@ -161,7 +245,7 @@ def test_edit_path_security(project_dir, harness_dir, tmp_path):
     outside.write_text("secret")
     result = execute_tool("Edit", {
         "file_path": str(outside), "old_string": "secret", "new_string": "hacked"
-    }, project_dir, harness_dir)
+    }, project_dir, harness_dir, allow_project_writes=True)
     assert result.startswith("Error:")
     assert outside.read_text() == "secret"
 
@@ -201,6 +285,43 @@ def test_bash_runs_without_shell(project_dir, harness_dir, monkeypatch):
     assert result == "ok\n"
     assert calls[0][0] == ["git", "status"]
     assert calls[0][1].get("shell") is not True
+
+
+def test_bash_children_never_receive_hero_credentials(
+    project_dir, harness_dir, monkeypatch,
+):
+    for key in bash_executor.HERO_CREDENTIAL_KEYS:
+        monkeypatch.setenv(key, f"secret-{key}")
+    child_envs = []
+
+    class Completed:
+        stdout = "ok\n"
+        stderr = ""
+        returncode = 0
+
+    def fake_run(args, **kwargs):
+        child_envs.append(kwargs["env"])
+        return Completed()
+
+    monkeypatch.setattr(bash_executor.subprocess, "run", fake_run)
+    result = execute_tool(
+        "Bash",
+        {
+            "command": (
+                "export telegram_token=reintroduced; "
+                "export Anthropic_Api_Key=reintroduced; "
+                "export Telegram_Chat_Id=reintroduced; git status"
+            )
+        },
+        project_dir,
+        harness_dir,
+    )
+
+    assert result == "ok\n"
+    assert len(child_envs) == 1
+    assert bash_executor.HERO_CREDENTIAL_KEYS.isdisjoint(
+        key.upper() for key in child_envs[0]
+    )
 
 
 def test_bash_redirection_blocked(project_dir, harness_dir):
@@ -255,10 +376,15 @@ def test_bash_nested_subshell_blocked(project_dir, harness_dir):
     assert "not allowed" in result
 
 
-def test_bash_timeout(project_dir, harness_dir):
-    cmd = "python3 -c \"import time; time.sleep(10)\""
-    result = execute_tool("Bash", {"command": cmd, "timeout": 1}, project_dir, harness_dir)
-    assert "timed out" in result or "Error" in result
+def test_bash_timeout(project_dir, harness_dir, monkeypatch):
+    def timeout(*args, **kwargs):
+        raise bash_executor.subprocess.TimeoutExpired(cmd="echo", timeout=1)
+
+    monkeypatch.setattr(bash_executor, "_run_bash_pipeline", timeout)
+    result = execute_tool(
+        "Bash", {"command": "echo hello", "timeout": 1}, project_dir, harness_dir,
+    )
+    assert result == "Error: command timed out after 1s"
 
 
 # --- Glob tests ---
@@ -390,7 +516,7 @@ class TestToolExecutor:
         assert "line2" in result
 
     def test_write(self, project_dir, harness_dir):
-        executor = ToolExecutor(project_dir, harness_dir)
+        executor = ToolExecutor(project_dir, harness_dir, allow_project_writes=True)
         target = project_dir / "out.txt"
         result = executor.execute("Write", {"file_path": str(target), "content": "hi"})
         assert "Successfully" in result
@@ -399,7 +525,7 @@ class TestToolExecutor:
     def test_edit(self, project_dir, harness_dir):
         f = project_dir / "file.txt"
         f.write_text("old value here", encoding="utf-8")
-        executor = ToolExecutor(project_dir, harness_dir)
+        executor = ToolExecutor(project_dir, harness_dir, allow_project_writes=True)
         result = executor.execute("Edit", {
             "file_path": str(f), "old_string": "old", "new_string": "new",
         })
