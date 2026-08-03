@@ -16,7 +16,9 @@ from mission_orchestrator.ports.tool_registry import ToolEnvironment
 
 GRAPH_INSTRUCTIONS = """Use the SQLite code graph when useful.
 Database artifact: code_graph.db in the harness workspace.
-Useful tables: nodes(id,type,file), edges(source,target,relation), files(path,mtime_ns).
+Structural tables: nodes(id,type,file,name), edges(source,target,relation,file) with defines/imports/inherits.
+Lexical usage table: lexical_refs(source,target,relation,file) with calls/references by textual name.
+Files table: files(path,mtime_ns). Meta table: meta(key,value) includes observed_revision.
 Keep code graph findings as supporting context; source files remain authoritative."""
 
 
