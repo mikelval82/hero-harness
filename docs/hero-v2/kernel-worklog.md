@@ -52,7 +52,7 @@ flowchart LR
 | ID | Tarea | Spec | Estado | Commit |
 |----|-------|------|--------|--------|
 | K1 | Analyzer: descubrimiento tracked+untracked, purga de borrados, revisiones observadas transaccionales, solo hechos estructurales en el lienzo, IDs cualificados por ámbito léxico | ligera | ✅ hecho | `K1` |
-| K2 | Esquema capa de diseño: dimensiones (procedencia/ubicación/resolución/intención), localizadores esperados, log de operaciones, revisión global, versión de esquema | **completa** | pendiente | — |
+| K2 | Esquema capa de diseño: dimensiones (procedencia/ubicación/resolución/intención), localizadores esperados, log de operaciones, revisión global, versión de esquema | **completa** | ✅ hecho | `K2` |
 | K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | pendiente | — |
 | K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | pendiente | — |
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | pendiente | — |
@@ -104,9 +104,21 @@ Cada entrada se escribe al cerrar la tarea, en su mismo commit. Formato: context
 
 _(pendiente)_ → nada pendiente de K1.
 
-### K2 — Esquema de la capa de diseño
+### K2 — Esquema de la capa de diseño (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K2-design-layer.md](specs/K2-design-layer.md). Tests A1–A9 escritos antes que la implementación.
+
+**D-2.1 · Base de datos separada (`design.db`), no tablas junto a los hechos.** La migración de hechos es destructiva por diseño (D-1.3); poner datos autorales en el mismo fichero habría dejado la pérdida de diseño a un cambio de `SCHEMA_VERSION` de distancia. Separar ficheros convierte la política en estructura: el diseño falla con `DesignStoreVersionError` ante versión desconocida y nunca dropea.
+
+**D-2.2 · La resolución no es una columna.** `resolution_for(node, facts)` calcula RESOLVED/UNRESOLVED resolviendo el `locator` contra los hechos en el momento de la consulta; EXTERNAL se deriva de la dimensión `location`. Almacenarla habría creado el estado desincronizable que el documento de visión prohíbe. `AMBIGUOUS` existe en el enum pero nada lo produce aún (llegará con fuentes menos fiables, según lo diferido).
+
+**D-2.3 · CAS global + rechazo registrado, sin excepciones de control de flujo hacia fuera.** `apply()` devuelve siempre `ApplyResult` (APPLIED/CONFLICT/REJECTED/DUPLICATE) y registra **todos** los intentos en `operations`, incluidos los fallidos —la auditoría de quién intentó qué es tan valiosa como el estado final. Los conflictos no son errores del programa, son resultados del protocolo.
+
+**D-2.4 · Atomicidad con SAVEPOINT dentro de la transacción de sesión.** El lote se valida aplicándolo: si una operación falla, rollback al savepoint y se registra el rechazo en la misma transacción. Se descartó validar-primero-aplicar-después porque duplicaría la lógica de efectos del propio lote (una arista puede apuntar a un nodo creado dos operaciones antes).
+
+**D-2.5 · `provenance` inmutable; `remove_node` con limpieza determinista.** Quién introdujo un elemento es un hecho histórico, no un campo editable. Borrar un nodo elimina sus aristas y desengancha (`parent_id = NULL`) a sus hijos en vez de borrarlos en cascada: borrar un contenedor no debe destruir silenciosamente el trabajo que contenía.
+
+**D-2.6 · Sin puerto todavía.** `DesignStore` es un adapter usado por otros adapters (las tools de K4); el protocolo en `ports/` se introducirá cuando el core de aplicación lo consuma (K5, aprobación). Crear la abstracción antes de su segundo consumidor sería especular.
 
 ### K3 — Persistencia por ámbitos
 
@@ -150,7 +162,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 |-------|--------------------|-------------|--------------------------|-----------|
 | K0 | n/a (setup) | 11/11 verde | n/a | ✅ baseline publicado |
 | K1 | 7/7 (tests/adapters/test_code_graph.py): untracked, purga, qualnames, separación, revisión, dead-code, versión esquema | 18/18 verde | Dos correcciones fuera de alcance nominal, aceptadas por ser bugs (D-1.6, D-1.7); GRAPH_INSTRUCTIONS actualizado al esquema nuevo | ✅ |
-| K2 | — | — | — | — |
+| K2 | 9/9 (tests/adapters/test_design_store.py): A1–A9 de la spec | 27/27 verde | Ninguna: diff limitado a domain/design.py, adapters/design/, tests y worklog | ✅ |
 | K3 | — | — | — | — |
 | K4 | — | — | — | — |
 | K5 | — | — | — | — |

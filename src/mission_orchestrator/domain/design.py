@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+
+
+class Provenance(Enum):
+    ANALYZER = "ANALYZER"
+    HUMAN = "HUMAN"
+    AGENT = "AGENT"
+
+
+class Location(Enum):
+    IN_REPOSITORY = "IN_REPOSITORY"
+    EXTERNAL = "EXTERNAL"
+
+
+class Resolution(Enum):
+    RESOLVED = "RESOLVED"
+    AMBIGUOUS = "AMBIGUOUS"
+    UNRESOLVED = "UNRESOLVED"
+    EXTERNAL = "EXTERNAL"
+
+
+class Intent(Enum):
+    KEEP = "KEEP"
+    CREATE = "CREATE"
+    CHANGE = "CHANGE"
+    REMOVE = "REMOVE"
+
+
+class DesignLevel(Enum):
+    SYSTEM = "SYSTEM"
+    PACKAGE = "PACKAGE"
+    CODE = "CODE"
+
+
+class ApplyStatus(Enum):
+    APPLIED = "APPLIED"
+    CONFLICT = "CONFLICT"
+    REJECTED = "REJECTED"
+    DUPLICATE = "DUPLICATE"
+
+
+@dataclass(frozen=True)
+class DesignNode:
+    id: str
+    label: str
+    level: str
+    provenance: str
+    location: str
+    intent: str
+    parent_id: str | None = None
+    locator: str | None = None
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class DesignEdge:
+    source: str
+    target: str
+    relation: str
+    provenance: str
+    intent: str
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    status: ApplyStatus
+    revision: int
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class OperationRecord:
+    seq: int
+    operation_id: str
+    author: str
+    base_revision: int
+    status: ApplyStatus
+    detail: str
