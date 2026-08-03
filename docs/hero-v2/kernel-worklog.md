@@ -56,7 +56,7 @@ flowchart LR
 | K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | ✅ hecho | `K3` |
 | K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | ✅ hecho | `K4` |
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | ✅ hecho | `K5` |
-| K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | pendiente | — |
+| K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | ✅ hecho | `K6` |
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | pendiente | — |
 | K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | pendiente | — |
 | K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | pendiente | — |
@@ -162,9 +162,19 @@ Spec: [specs/K5-approval.md](specs/K5-approval.md).
 
 **D-5.5 · Coordinador con inyección directa, sin tocar `AppServices` aún.** La integración en el pipeline (dónde se invoca la espera dentro del flujo de misión) pertenece a K6/K7, cuando la compilación sustituya a la generación libre de tasks.json; añadir el puerto ahora sería plumbing especulativo (coherente con D-2.6).
 
-### K6 — Compilador ChangeSet
+### K6 — Compilador ChangeSet (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K6-changeset-compiler.md](specs/K6-changeset-compiler.md). Tests C1–C8 escritos antes que la implementación.
+
+**D-6.1 · Función pura en el dominio, sin conexiones.** `compile_changeset(snapshot, observed_ids)` recibe el dict del snapshot y un `set` de ids observados; quien llama resuelve la observación. Cero IO hace el determinismo trivialmente verificable (C6 compara serializaciones byte a byte con órdenes de entrada distintos).
+
+**D-6.2 · CREATE ya materializado se omite con motivo, no falla.** Si el locator de un CREATE ya resuelve, la propuesta se cumplió (típicamente en reanudaciones o recompilaciones); generar la tarea duplicaría trabajo. Queda en `skipped` con `already_materialized` para que el humano vea por qué no aparece en el plan.
+
+**D-6.3 · CHANGE/REMOVE sin observación son issues, no operaciones ni excepciones.** No se puede modificar ni retirar lo que el analyzer no ve; pero abortar la compilación ocultaría el resto del informe. El ChangeSet completo (operaciones + omitidas + issues) es el producto; decidir si un issue bloquea corresponde al validador de K7 y al humano.
+
+**D-6.4 · Las aristas arquitectónicas no fabrican dependencias de ejecución.** Única dependencia estructural emitida: un `CONNECT` depende de los `CREATE_NODE` de sus extremos (no se conecta lo que no existe). Todo lo demás es contexto para el structurer —exactamente el límite que fijó el debate (§8 de la visión: una relación CALLS no dice qué tarea va primero).
+
+**D-6.5 · EXTERNAL + CREATE emite operación sin precondición de locator.** Aprovisionar una pieza externa (una base de datos, una cola) es trabajo real del plan aunque nunca tenga símbolo AST (C8).
 
 ### K7 — WorkPlan y validador
 
@@ -196,7 +206,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K3 | 5/5 (tests/adapters/test_workspace.py) | 32/32 verde | Ninguna: diff limitado a workspace.py, spec, tests y worklog | ✅ |
 | K4 | 8/8 (tests/adapters/test_graph_tools.py): B1–B8 de la spec | 40/40 verde | Ninguna: diff limitado a graph_tools.py, registry.py, phase_registry.py, agents/*.md, tests y worklog | ✅ |
 | K5 | 6/6 (tests/application/test_approval.py) | 46/46 verde | Ninguna: diff limitado a store.py (aditivo), domain/design.py, application/approval.py, spec, tests y worklog | ✅ |
-| K6 | — | — | — | — |
+| K6 | 8/8 (tests/domain/test_changeset.py): C1–C8 de la spec | 54/54 verde | Ninguna: diff limitado a domain/changeset.py, spec, tests y worklog | ✅ |
 | K7 | — | — | — | — |
 | K8 | — | — | — | — |
 | K9 | — | — | — | — |
