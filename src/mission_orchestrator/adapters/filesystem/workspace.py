@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from mission_orchestrator.domain.mission import GateMode
@@ -17,12 +20,19 @@ def sanitize(value: str, *, max_len: int = 80) -> str:
     return (cleaned or "mission")[:max_len]
 
 
+def project_id_for(project_dir: Path) -> str:
+    normalized = str(project_dir.resolve()).replace("\\", "/").lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:10]
+
+
 @dataclass(frozen=True)
 class WorkspaceInfo:
     project_name: str
+    project_id: str
     branch_safe: str
     mission_tag: str
     harness_dir: Path
+    project_scope_dir: Path
 
 
 class WorkspaceManager:
@@ -38,14 +48,36 @@ class WorkspaceManager:
         gate_mode: GateMode,
     ) -> WorkspaceInfo:
         project_name = sanitize(project_dir.name)
+        project_id = project_id_for(project_dir)
         branch_safe = sanitize(branch, max_len=60)
-        harness_dir = self.root / project_name / branch_safe
-        keep = resume and (harness_dir / "tasks.json").exists()
+        project_key_dir = self.root / f"{project_name}-{project_id}"
+        project_scope_dir = project_key_dir / "project"
+        harness_dir = project_key_dir / "missions" / branch_safe
+        keep = resume and (harness_dir / "_mission.json").exists()
         if harness_dir.exists() and not keep:
             shutil.rmtree(harness_dir)
         harness_dir.mkdir(parents=True, exist_ok=True)
+        project_scope_dir.mkdir(parents=True, exist_ok=True)
+        if not keep:
+            manifest = {
+                "project_id": project_id,
+                "project_dir": str(project_dir.resolve()),
+                "branch": branch,
+                "gate_mode": gate_mode.value,
+                "created": datetime.now(timezone.utc).isoformat(),
+            }
+            (harness_dir / "_mission.json").write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
         (harness_dir / "_project_dir").write_text(str(project_dir.resolve()), encoding="utf-8")
         (harness_dir / "_gate_mode").write_text(gate_mode.value, encoding="utf-8")
         os.environ["CLAUDE_HARNESS"] = str(harness_dir)
-        return WorkspaceInfo(project_name, branch_safe, f"{project_name}:{branch_safe}", harness_dir)
+        return WorkspaceInfo(
+            project_name,
+            project_id,
+            branch_safe,
+            f"{project_name}:{branch_safe}",
+            harness_dir,
+            project_scope_dir,
+        )
 

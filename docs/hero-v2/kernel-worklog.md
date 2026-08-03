@@ -53,7 +53,7 @@ flowchart LR
 |----|-------|------|--------|--------|
 | K1 | Analyzer: descubrimiento tracked+untracked, purga de borrados, revisiones observadas transaccionales, solo hechos estructurales en el lienzo, IDs cualificados por ámbito léxico | ligera | ✅ hecho | `K1` |
 | K2 | Esquema capa de diseño: dimensiones (procedencia/ubicación/resolución/intención), localizadores esperados, log de operaciones, revisión global, versión de esquema | **completa** | ✅ hecho | `K2` |
-| K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | pendiente | — |
+| K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | ✅ hecho | `K3` |
 | K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | pendiente | — |
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | pendiente | — |
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | pendiente | — |
@@ -120,9 +120,17 @@ Spec: [specs/K2-design-layer.md](specs/K2-design-layer.md). Tests A1–A9 escrit
 
 **D-2.6 · Sin puerto todavía.** `DesignStore` es un adapter usado por otros adapters (las tools de K4); el protocolo en `ports/` se introducirá cuando el core de aplicación lo consuma (K5, aprobación). Crear la abstracción antes de su segundo consumidor sería especular.
 
-### K3 — Persistencia por ámbitos
+### K3 — Persistencia por ámbitos (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K3-persistence-scopes.md](specs/K3-persistence-scopes.md).
+
+**D-3.1 · `project_id` = sha256 truncado de la ruta absoluta normalizada (lowercase, separadores unificados).** Diez caracteres bastan para el propósito (distinguir repos homónimos en una máquina); la carpeta es `{nombre}-{id}` para conservar legibilidad humana. Consecuencia asumida: mover el repo de carpeta cambia el id y “abandona” el estado anterior —aceptable en kernel, y es exactamente el caso que el registro de proyectos diferido resolvería si algún día duele.
+
+**D-3.2 · Dos ámbitos bajo la clave de proyecto: `missions/<branch>` y `project/`.** El setup de misión solo borra dentro de `missions/`; `project/` (donde K5 pondrá el baseline y los snapshots aprobados) es intocable para el ciclo de vida de misiones. La separación es de nuevo estructural, no una convención: el `rmtree` apunta a un subárbol que no contiene el ámbito durable.
+
+**D-3.3 · La reanudabilidad la decide `_mission.json`, no `tasks.json`.** Una misión interrumpida durante research o grill —que es cuando el mapa de diseño se está construyendo— ya no pierde su estado al reanudar. El manifiesto se escribe solo en arranques frescos, preservando el timestamp original en las reanudaciones.
+
+**D-3.4 · Los workspaces del layout antiguo no se migran.** Quedan huérfanos en `~/.harness/<nombre>/`; eran efimeros por definición (el layout viejo los borraba en cada arranque sin resume). Migrarlos sería código para preservar datos diseñados para no sobrevivir.
 
 ### K4 — Herramientas de grafo
 
@@ -163,7 +171,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K0 | n/a (setup) | 11/11 verde | n/a | ✅ baseline publicado |
 | K1 | 7/7 (tests/adapters/test_code_graph.py): untracked, purga, qualnames, separación, revisión, dead-code, versión esquema | 18/18 verde | Dos correcciones fuera de alcance nominal, aceptadas por ser bugs (D-1.6, D-1.7); GRAPH_INSTRUCTIONS actualizado al esquema nuevo | ✅ |
 | K2 | 9/9 (tests/adapters/test_design_store.py): A1–A9 de la spec | 27/27 verde | Ninguna: diff limitado a domain/design.py, adapters/design/, tests y worklog | ✅ |
-| K3 | — | — | — | — |
+| K3 | 5/5 (tests/adapters/test_workspace.py) | 32/32 verde | Ninguna: diff limitado a workspace.py, spec, tests y worklog | ✅ |
 | K4 | — | — | — | — |
 | K5 | — | — | — | — |
 | K6 | — | — | — | — |
