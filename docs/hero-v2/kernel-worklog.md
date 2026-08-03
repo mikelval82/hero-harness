@@ -194,6 +194,14 @@ Spec: [specs/K7-workplan-validator.md](specs/K7-workplan-validator.md). Tests D1
 
 **🏁 Checkpoint de hito alcanzado.** Con K7 el bucle de valor completo funciona headless: dibujar (K4) → aprobar (K5) → compilar (K6) → agrupar y validar (K7) → ejecutar (bucle existente). Antes de K8–K10 corresponde la misión real de prueba end-to-end acordada en el plan.
 
+### Checkpoint de hito — misión real (2026-08-04, en curso)
+
+Misión de prueba sobre repo externo `COPILOT_LEARNING` (modo plan, `--no-grill`): generar `tools/case_index.py` + `INDEX.md`.
+
+**Hallazgo CP-1 · Un tool denegado mataba la fase entera.** El primer intento real bloqueó en research con `api_retries | command not allowed: dir`: `BashPolicy` lanza `PermissionError`, el registry la propaga y `AnthropicAgentClient._run` no la capturaba, así que un solo comando fuera del allowlist (el agente probó `dir`, natural en Windows) abortaba la fase con una etiqueta engañosa. Ningún test lo cubría porque la suite ejercitaba tools y loop por separado, nunca el contrato entre ambos.
+
+**D-CP.1 · Los errores de tool son conversación, no crash.** Fix en el agent loop: `tools.execute` envuelto en try/except; cualquier excepción se devuelve como `tool_result` con `is_error: true` y `ClassName: mensaje` para que el modelo se autocorrija (comportamiento estándar de agent loops). Las excepciones de control del loop (timeout, max turns, API) siguen propagándose. Tests nuevos en `tests/adapters/test_agent_client.py` (2): denegación de policy y tool desconocido → el loop continúa y el segundo turno recibe el error. Suite 64/64.
+
 ### K8 — Scheduling con dependencias
 
 _(pendiente)_

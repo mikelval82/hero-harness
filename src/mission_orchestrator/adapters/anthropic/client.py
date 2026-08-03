@@ -59,16 +59,22 @@ class AnthropicAgentClient:
                 messages.append({"role": "assistant", "content": assistant_content})
                 tool_results = []
                 for call in tool_calls:
-                    result = self.tools.execute(call["name"], call["input"], self.tool_env)
+                    is_error = False
+                    try:
+                        result = self.tools.execute(call["name"], call["input"], self.tool_env)
+                    except Exception as exc:
+                        is_error = True
+                        result = f"{exc.__class__.__name__}: {exc}"
                     if len(result) > MAX_TOOL_RESULT_CHARS:
                         result = result[:MAX_TOOL_RESULT_CHARS] + "\n...[truncated]"
-                    tool_results.append(
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": call["id"],
-                            "content": result,
-                        }
-                    )
+                    entry = {
+                        "type": "tool_result",
+                        "tool_use_id": call["id"],
+                        "content": result,
+                    }
+                    if is_error:
+                        entry["is_error"] = True
+                    tool_results.append(entry)
                 messages.append({"role": "user", "content": tool_results})
                 continue
             if not interactive:
