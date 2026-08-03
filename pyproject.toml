@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mission-orchestrator"
+version = "0.1.0"
+description = "Pragmatic hexagonal LLM mission orchestrator."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Mission Orchestrator" }]
+dependencies = []
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+dev = []
+
+[project.scripts]
+mission = "mission_orchestrator.cli:main"
+code-graph = "mission_orchestrator.adapters.analysis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mission_orchestrator = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+

@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from mission_orchestrator.application.burst_executor import BurstExecutor
+from mission_orchestrator.application.context_compactor import ContextCompactor
+from mission_orchestrator.application.pipeline_definitions import task_pipeline_for
+from mission_orchestrator.application.review_coordinator import ReviewCoordinator
+from mission_orchestrator.application.services import AppServices
+from mission_orchestrator.application.signal_controller import SignalController
+from mission_orchestrator.domain.block import BlockReason
+from mission_orchestrator.domain.mission import MissionContext, MissionMode, MissionSnapshot
+from mission_orchestrator.domain.phase import PhaseName
+from mission_orchestrator.domain.task import Task, TaskStatus
+
+
+STALE_TASK_ARTIFACTS = (
+    "spec.md",
+    "plan.md",
+    "decisions.md",
+    "status.md",
+    "audit.md",
+    "_burst_progress.md",
+)
+
+
+class TaskExecutor:
+    def __init__(
+        self,
+        services: AppServices,
+        context: MissionContext,
+        phase_executor,
+        signal_controller: SignalController,
+        compactor: ContextCompactor,
+    ) -> None:
+        self.services = services
+        self.context = context
+        self.phase_executor = phase_executor
+        self.signal_controller = signal_controller
+        self.compactor = compactor
+        self.burst_executor = BurstExecutor(phase_executor)
+        self.review = ReviewCoordinator(services, context, phase_executor, compactor)
+        self.block: BlockReason | None = None
+
+    def run(self, tasks: list[Task]) -> int:
+        completed = 0
+        total = len(tasks)
+        for index, task in enumerate(tasks):
+            if not self.signal_controller.check_signals():
+                self.block = self.signal_controller.block
+                break
+            if task.status == TaskStatus.COMPLETED:
+                completed += 1
+                continue
+            self._clear_stale_task_artifacts()
+            self.services.code_graph.build(self.context.project_dir)
+            self.services.state.update_phase(
+                MissionSnapshot(
+                    phase="task",
+                    task_id=task.id,
+                    task_title=task.title,
+                    task_num=index + 1,
+                    task_count=total,
+                    completed=completed,
+                    mode=self.context.mode.value,
+                    gate=self.services.state.get_gate_mode().value,
+                )
+            )
+            block = self._run_task_pipeline(task)
+            if block:
+                if block.is_mission_abort:
+                    self.block = block
+                    break
+                self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                continue
+            if self.context.mode == MissionMode.PLAN:
+                self.services.tasks.update(index, TaskStatus.COMPLETED)
+                self.compactor.compact(task.id)
+                completed += 1
+                continue
+            pipeline = task_pipeline_for(task, self.context.mode)
+            if PhaseName.REVIEW in pipeline.phases:
+                block = self.review.commit_or_request_human(index, task)
+            else:
+                self.review.approve_without_review(index, task)
+                block = None
+            if block:
+                if block.is_mission_abort:
+                    self.block = block
+                    break
+                self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                continue
+            completed += 1
+        return completed
+
+    def _run_task_pipeline(self, task: Task) -> BlockReason | None:
+        pipeline = task_pipeline_for(task, self.context.mode)
+        for phase in pipeline.phases:
+            if not self.signal_controller.check_signals():
+                return self.signal_controller.block
+            if phase == PhaseName.IMPLEMENT_BURSTS:
+                block = self.burst_executor.run(task)
+            else:
+                block = self.phase_executor.run(
+                    phase,
+                    variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                ).block
+            if phase == PhaseName.PLAN and not self.services.artifacts.exists("decisions.md"):
+                self.services.artifacts.write_text("decisions.md", "# Decisions\n\n(not available yet)\n")
+            if block:
+                return block
+        return None
+
+    def _clear_stale_task_artifacts(self) -> None:
+        for artifact in STALE_TASK_ARTIFACTS:
+            self.services.artifacts.delete(artifact)
+
