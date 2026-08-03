@@ -28,7 +28,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         DEFAULT_TOOLS,
         30,
         1200,
-        {"BRAINSTORM": "brainstorm.md", "BRIEF": "brief.md"},
+        {"BRAINSTORM": "brainstorm.md", "BRIEF": "brief.md", "CHANGESET": "changeset.json"},
     ),
     PhaseName.GRILL: PhaseConfig(
         PhaseName.GRILL,

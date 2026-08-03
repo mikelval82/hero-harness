@@ -96,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         resume=args.resume,
         mission_tag=workspace.mission_tag,
         project_name=workspace.project_name,
+        project_scope_dir=workspace.project_scope_dir,
     )
     _install_signal_handlers(commands)
     atexit.register(lambda: logger.log("process exit"))

@@ -36,6 +36,7 @@ class MissionContext:
     resume: bool
     mission_tag: str
     project_name: str
+    project_scope_dir: Path | None = None
 
 
 @dataclass(frozen=True)

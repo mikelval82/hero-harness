@@ -57,7 +57,7 @@ flowchart LR
 | K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | ✅ hecho | `K4` |
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | ✅ hecho | `K5` |
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | ✅ hecho | `K6` |
-| K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | pendiente | — |
+| K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | ✅ hecho | `K7` |
 | K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | pendiente | — |
 | K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | pendiente | — |
 | K10 | Render textual del diff + telemetría mínima (veredicto inicial, retrabajo, cobertura, deriva) | ligera | pendiente | — |
@@ -176,9 +176,23 @@ Spec: [specs/K6-changeset-compiler.md](specs/K6-changeset-compiler.md). Tests C1
 
 **D-6.5 · EXTERNAL + CREATE emite operación sin precondición de locator.** Aprovisionar una pieza externa (una base de datos, una cola) es trabajo real del plan aunque nunca tenga símbolo AST (C8).
 
-### K7 — WorkPlan y validador
+### K7 — WorkPlan y validador (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K7-workplan-validator.md](specs/K7-workplan-validator.md). Tests D1–D8 escritos antes que la implementación; D9 cubierta por la suite previa del orquestador, que sigue verde sin cambios.
+
+**D-7.1 · Activación por presencia de mapa, no por flag ni por modo.** El flujo compilado se dispara cuando `design.db` tiene nodos. Una misión donde nadie dibujó sigue el camino clásico idéntico al de antes de K7 (D9). Es la implementación operativa del “opcional por modo” de la visión §13 sin añadir configuración: quien no usa el mapa no paga por él.
+
+**D-7.2 · La secuencia vive en el orquestador, delante de STRUCTURE.** Aprobación (espera tipada K5) → compilación (K6 vía `PlanCompiler`) → STRUCTURE con `changeset.json` como include → validación de cobertura dentro de `_validate_structure`. REJECT/ABORT bloquean con la razón humana antes de compilar nada.
+
+**D-7.3 · El validador certifica, el structurer propone.** `validate_plan` (dominio puro) exige cobertura exactamente-una-vez, dependencias existentes, sin auto-dependencias ni ciclos (DFS con pila explícita en el mensaje). Si el LLM agrupa mal, STRUCTURE bloquea con los errores como detalle —la garantía central de la hipótesis es esta línea de defensa, no el prompt.
+
+**D-7.4 · Issues del changeset notifican, no bloquean la compilación.** Coherente con D-6.3: el humano ya aprobó el mapa; un CHANGE sin observación es información para corregir, y el bloqueo ocurrirá en cobertura si procede.
+
+**D-7.5 · `project_scope_dir` opcional en `MissionContext`.** Default `None` con fallback bajo el harness_dir: los tests y fixtures existentes no se rompen, y el CLI pasa el ámbito real de K3.
+
+**D-7.6 · Consolidación LLM desactivada solo para planes compilados.** El guard es la existencia de `changeset.json`; las misiones sin mapa conservan la consolidación actual.
+
+**🏁 Checkpoint de hito alcanzado.** Con K7 el bucle de valor completo funciona headless: dibujar (K4) → aprobar (K5) → compilar (K6) → agrupar y validar (K7) → ejecutar (bucle existente). Antes de K8–K10 corresponde la misión real de prueba end-to-end acordada en el plan.
 
 ### K8 — Scheduling con dependencias
 
@@ -207,7 +221,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K4 | 8/8 (tests/adapters/test_graph_tools.py): B1–B8 de la spec | 40/40 verde | Ninguna: diff limitado a graph_tools.py, registry.py, phase_registry.py, agents/*.md, tests y worklog | ✅ |
 | K5 | 6/6 (tests/application/test_approval.py) | 46/46 verde | Ninguna: diff limitado a store.py (aditivo), domain/design.py, application/approval.py, spec, tests y worklog | ✅ |
 | K6 | 8/8 (tests/domain/test_changeset.py): C1–C8 de la spec | 54/54 verde | Ninguna: diff limitado a domain/changeset.py, spec, tests y worklog | ✅ |
-| K7 | — | — | — | — |
+| K7 | 8/8 (tests/application/test_plan_pipeline.py): D1–D8; D9 = suite previa intacta | 62/62 verde | `project_scope_dir` añadido a MissionContext como opcional para no romper fixtures (D-7.5) | ✅ |
 | K8 | — | — | — | — |
 | K9 | — | — | — | — |
 | K10 | — | — | — | — |

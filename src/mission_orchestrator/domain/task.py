@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
@@ -41,6 +41,9 @@ class Task:
     complexity: TaskComplexity = TaskComplexity.M
     status: TaskStatus = TaskStatus.PENDING
     failure_reason: str = ""
+    covers: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+    target_nodes: list[str] = field(default_factory=list)
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "Task":
@@ -50,15 +53,21 @@ class Task:
             complexity=TaskComplexity.parse(data.get("complexity", TaskComplexity.M.value)),
             status=TaskStatus.parse(data.get("status", TaskStatus.PENDING.value)),
             failure_reason=str(data.get("failure_reason", "")),
+            covers=[str(item) for item in data.get("covers", []) or []],
+            dependencies=[str(item) for item in data.get("dependencies", []) or []],
+            target_nodes=[str(item) for item in data.get("target_nodes", []) or []],
         )
 
-    def to_json(self) -> dict[str, str]:
+    def to_json(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
             "complexity": self.complexity.value,
             "status": self.status.value,
             "failure_reason": self.failure_reason,
+            "covers": list(self.covers),
+            "dependencies": list(self.dependencies),
+            "target_nodes": list(self.target_nodes),
         }
 
 
