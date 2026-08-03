@@ -1,0 +1,9 @@
+# K5 — Aprobación CAS y Approved Snapshot (spec ligera)
+
+Deriva de las secciones 3, 6 y 8 de [hero-v2-grafo-vivo.md](../../hero-v2-grafo-vivo.md).
+
+**Qué cambia.** `DesignStore` gana `approve(base_revision)`: compare-and-swap contra la revisión de diseño vigente que, si coincide, produce un snapshot inmutable (nodos + aristas + revisiones + timestamp) con `snapshot_id` derivado del hash de su contenido canónico, y lo registra en una tabla `approvals` del propio `design.db`. Con revisión obsoleta devuelve `CONFLICT` y no crea nada. Se añade `ApprovalCoordinator` en la capa de aplicación: publica un resumen del mapa por el notifier, espera bloqueado en el `CommandBus` aceptando solo `APPROVE`/`REJECT`/`ABORT` (espera tipada: cualquier otro comando se difiere de vuelta al bus, mismo patrón que `ReviewCoordinator`), y al aprobar exporta el snapshot como JSON a dos rutas: `approved_snapshot.json` en el workspace de misión (lo consumirá el compilador K6) y `snapshots/<id>.json` en el ámbito durable de proyecto (K3).
+
+**Qué no cambia.** El pipeline de misión no invoca aún al coordinador — la integración llega con K6/K7, cuando la compilación sustituya a la generación libre de `tasks.json`. `AppServices` no gana el puerto de diseño todavía (mismo criterio que D-2.6: la abstracción, cuando el orquestador la consuma). El esquema de `design.db` se amplía de forma **aditiva** dentro de la versión 1: `CREATE TABLE IF NOT EXISTS` en cada conexión de versión conocida; la política de fallo sin drop para versiones desconocidas se mantiene.
+
+**Cómo se verifica.** `tests/application/test_approval.py`: approve con revisión vigente crea snapshot con id estable por contenido y lo registra; approve obsoleto devuelve CONFLICT sin efectos; el coordinador aprueba ante `/approve` escribiendo ambos ficheros, rechaza ante `/reject` sin escribir, aborta ante `/abort`, y difiere comandos no esperados (un `ANSWER` previo vuelve al bus intacto).

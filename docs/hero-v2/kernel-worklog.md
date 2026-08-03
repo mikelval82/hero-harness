@@ -55,7 +55,7 @@ flowchart LR
 | K2 | Esquema capa de diseño: dimensiones (procedencia/ubicación/resolución/intención), localizadores esperados, log de operaciones, revisión global, versión de esquema | **completa** | ✅ hecho | `K2` |
 | K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | ✅ hecho | `K3` |
 | K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | ✅ hecho | `K4` |
-| K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | pendiente | — |
+| K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | ✅ hecho | `K5` |
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | pendiente | — |
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | pendiente | — |
 | K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | pendiente | — |
@@ -148,9 +148,19 @@ Spec: [specs/K4-graph-tools.md](specs/K4-graph-tools.md). Tests B1–B8 escritos
 
 **D-4.6 · Los prompts declaran el contrato conversacional.** researcher: mapa (estructura) + brainstorm (razonamiento), SYSTEM siempre como diseño y nunca como hecho. griller: consulta el mapa antes de preguntar, refleja decisiones humanas al momento, y regla de coherencia —no registrar en brief.md nada que el mapa contradiga.
 
-### K5 — Aprobación CAS y snapshot
+### K5 — Aprobación CAS y snapshot (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K5-approval.md](specs/K5-approval.md).
+
+**D-5.1 · `snapshot_id` por hash del contenido canónico, no por timestamp.** Aprobar dos veces el mismo estado produce el mismo id (verificado en test): la identidad del acuerdo es su contenido. El timestamp va dentro del snapshot pero fuera del hash. Esto hace los snapshots deduplicables y verificables a posteriori.
+
+**D-5.2 · Migración aditiva dentro de la versión soportada.** La tabla `approvals` se añade ejecutando el `CREATE TABLE IF NOT EXISTS` idempotente tambén cuando `user_version` ya es la soportada. Bumpear la versión habría invalidado design.db recién creados por un cambio puramente aditivo; la política de fallo-sin-drop se mantiene intacta para versiones desconocidas.
+
+**D-5.3 · Ante CONFLICT en el approve, el coordinador re-presenta, no falla.** Si el mapa cambió mientras el humano decída (turno del agente terminado tarde), la reacción correcta es notificar y volver a esperar sobre la nueva revisión —exactamente el comportamiento CAS que la visión §8 describe.
+
+**D-5.4 · Doble export: misión + ámbito durable.** `approved_snapshot.json` en el workspace (input directo del compilador K6) y `snapshots/<id>.json` en `project/` (historial que sobrevive misiones, K3). JSON como formato de exportación de snapshots es exactamente el rol que la visión §6 le reserva.
+
+**D-5.5 · Coordinador con inyección directa, sin tocar `AppServices` aún.** La integración en el pipeline (dónde se invoca la espera dentro del flujo de misión) pertenece a K6/K7, cuando la compilación sustituya a la generación libre de tasks.json; añadir el puerto ahora sería plumbing especulativo (coherente con D-2.6).
 
 ### K6 — Compilador ChangeSet
 
@@ -185,7 +195,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K2 | 9/9 (tests/adapters/test_design_store.py): A1–A9 de la spec | 27/27 verde | Ninguna: diff limitado a domain/design.py, adapters/design/, tests y worklog | ✅ |
 | K3 | 5/5 (tests/adapters/test_workspace.py) | 32/32 verde | Ninguna: diff limitado a workspace.py, spec, tests y worklog | ✅ |
 | K4 | 8/8 (tests/adapters/test_graph_tools.py): B1–B8 de la spec | 40/40 verde | Ninguna: diff limitado a graph_tools.py, registry.py, phase_registry.py, agents/*.md, tests y worklog | ✅ |
-| K5 | — | — | — | — |
+| K5 | 6/6 (tests/application/test_approval.py) | 46/46 verde | Ninguna: diff limitado a store.py (aditivo), domain/design.py, application/approval.py, spec, tests y worklog | ✅ |
 | K6 | — | — | — | — |
 | K7 | — | — | — | — |
 | K8 | — | — | — | — |

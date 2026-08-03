@@ -79,3 +79,9 @@ class OperationRecord:
     base_revision: int
     status: ApplyStatus
     detail: str
+
+
+@dataclass(frozen=True)
+class SnapshotResult:
+    status: ApplyStatus
+    snapshot: dict | None

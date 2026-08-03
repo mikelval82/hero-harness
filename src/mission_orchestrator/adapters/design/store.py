@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from collections.abc import Iterator
@@ -19,6 +20,7 @@ from mission_orchestrator.domain.design import (
     OperationRecord,
     Provenance,
     Resolution,
+    SnapshotResult,
 )
 
 SCHEMA_VERSION = 1
@@ -44,6 +46,12 @@ CREATE TABLE IF NOT EXISTS design_edges(
   PRIMARY KEY(source, target, relation)
 );
 CREATE TABLE IF NOT EXISTS design_meta(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS approvals(
+  snapshot_id TEXT PRIMARY KEY,
+  design_revision INTEGER NOT NULL,
+  observed_revision INTEGER NOT NULL,
+  created TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS operations(
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   operation_id TEXT UNIQUE NOT NULL,
@@ -77,11 +85,11 @@ class DesignStore:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         version = int(connection.execute("PRAGMA user_version").fetchone()[0])
-        if version == 0:
+        if version in (0, SCHEMA_VERSION):
             connection.executescript(SCHEMA)
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             connection.commit()
-        elif version != SCHEMA_VERSION:
+        else:
             connection.close()
             raise DesignStoreVersionError(
                 f"design.db schema version {version} is not supported (expected {SCHEMA_VERSION}); "
@@ -367,3 +375,43 @@ class DesignStore:
         with facts.session() as connection:
             row = connection.execute("SELECT 1 FROM nodes WHERE id = ?", (node.locator,)).fetchone()
         return Resolution.RESOLVED if row else Resolution.UNRESOLVED
+
+    def approve(self, *, base_revision: int, observed_revision: int) -> SnapshotResult:
+        with self._session() as connection:
+            revision = self._revision(connection)
+            if base_revision != revision:
+                return SnapshotResult(ApplyStatus.CONFLICT, None)
+            payload = {
+                "design_revision": revision,
+                "observed_revision": observed_revision,
+                "nodes": [node.__dict__ for node in self._nodes_in(connection)],
+                "edges": [edge.__dict__ for edge in self._edges_in(connection)],
+            }
+            canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+            snapshot_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+            snapshot = {"snapshot_id": snapshot_id, **payload, "created": datetime.now(timezone.utc).isoformat()}
+            connection.execute(
+                "INSERT OR IGNORE INTO approvals(snapshot_id, design_revision, observed_revision, created) "
+                "VALUES (?, ?, ?, ?)",
+                (snapshot_id, revision, observed_revision, snapshot["created"]),
+            )
+            return SnapshotResult(ApplyStatus.APPLIED, snapshot)
+
+    def _nodes_in(self, connection: sqlite3.Connection) -> list[DesignNode]:
+        rows = connection.execute(
+            "SELECT id, label, level, provenance, location, intent, parent_id, locator, description "
+            "FROM design_nodes ORDER BY id"
+        ).fetchall()
+        return [
+            DesignNode(
+                id=row[0], label=row[1], level=row[2], provenance=row[3],
+                location=row[4], intent=row[5], parent_id=row[6], locator=row[7], description=row[8],
+            )
+            for row in rows
+        ]
+
+    def _edges_in(self, connection: sqlite3.Connection) -> list[DesignEdge]:
+        rows = connection.execute(
+            "SELECT source, target, relation, provenance, intent FROM design_edges ORDER BY source, target, relation"
+        ).fetchall()
+        return [DesignEdge(*row) for row in rows]
