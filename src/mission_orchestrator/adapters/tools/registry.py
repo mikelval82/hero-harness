@@ -3,6 +3,7 @@ from __future__ import annotations
 from mission_orchestrator.adapters.tools.bash_executor import BashTool
 from mission_orchestrator.adapters.tools.bash_policy import BashPolicy
 from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, WriteTool
+from mission_orchestrator.adapters.tools.graph_tools import GraphProposeTool, GraphQueryTool
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
 from mission_orchestrator.adapters.tools.search_tools import GlobTool, GrepTool
 from mission_orchestrator.ports.logger import MissionLogger
@@ -37,5 +38,7 @@ def default_tool_registry(logger: MissionLogger | None = None) -> LocalToolRegis
     registry.register(GlobTool(path_policy))
     registry.register(GrepTool(path_policy))
     registry.register(BashTool(BashPolicy(path_policy)))
+    registry.register(GraphQueryTool())
+    registry.register(GraphProposeTool())
     return registry
 

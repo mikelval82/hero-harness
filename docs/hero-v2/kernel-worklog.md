@@ -54,7 +54,7 @@ flowchart LR
 | K1 | Analyzer: descubrimiento tracked+untracked, purga de borrados, revisiones observadas transaccionales, solo hechos estructurales en el lienzo, IDs cualificados por ámbito léxico | ligera | ✅ hecho | `K1` |
 | K2 | Esquema capa de diseño: dimensiones (procedencia/ubicación/resolución/intención), localizadores esperados, log de operaciones, revisión global, versión de esquema | **completa** | ✅ hecho | `K2` |
 | K3 | Persistencia por ámbitos: `project_id` por ruta normalizada, baseline de proyecto que sobrevive misiones, manifiesto de misión (reanudable sin `tasks.json`) | ligera | ✅ hecho | `K3` |
-| K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | pendiente | — |
+| K4 | Herramientas `GraphQuery`/`GraphPropose`, registro en fases research/grill, prompts de agentes actualizados | **completa** | ✅ hecho | `K4` |
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | pendiente | — |
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | pendiente | — |
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | pendiente | — |
@@ -132,9 +132,21 @@ Spec: [specs/K3-persistence-scopes.md](specs/K3-persistence-scopes.md).
 
 **D-3.4 · Los workspaces del layout antiguo no se migran.** Quedan huérfanos en `~/.harness/<nombre>/`; eran efimeros por definición (el layout viejo los borraba en cada arranque sin resume). Migrarlos sería código para preservar datos diseñados para no sobrevivir.
 
-### K4 — Herramientas de grafo
+### K4 — Herramientas de grafo (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K4-graph-tools.md](specs/K4-graph-tools.md). Tests B1–B8 escritos antes que la implementación.
+
+**D-4.1 · Toda respuesta lleva `design_revision`.** El protocolo CAS de K2 exige que el agente conozca la revisión vigente para proponer; incluirla en cada salida (query y propose, incluso en CONFLICT) elimina una ronda extra de tool-use por turno —directamente relevante para la métrica de coste en tokens de la sección 14 de la visión.
+
+**D-4.2 · El canal impone el autor.** `GraphPropose` firma siempre las operaciones como `AGENT` en el log de auditoría; el agente no puede suplantar a HUMAN. La dimensión `provenance` de cada nodo sí queda a su criterio, porque el griller transcribe decisiones humanas del chat —distinción deliberada entre *quién ejecutó la operación* y *de quién es la idea*.
+
+**D-4.3 · CONFLICT/REJECTED son salida JSON normal, no excepción.** El agente debe leer el resultado y reintentar razonadamente; una excepción de tool acabaría como texto de error opaco en el tool_result. En CONFLICT se devuelve la revisión actual para reconstruir el lote sin query adicional.
+
+**D-4.4 · `GraphQuery` cubre design y facts.** El agente ancla propuestas buscando declaraciones reales (`scope='facts'`, patrón → id/tipo/fichero) sin necesidad de Bash ni SQL —la revisión de K0 había detectado que `bash_policy` bloquea `sqlite3`, así que el párrafo GRAPH_INSTRUCTIONS era en la práctica inoperante para consultas; estas tools son el reemplazo real.
+
+**D-4.5 · Solo RESEARCH y GRILL reciben las tools (`DESIGN_TOOLS`).** SPEC/PLAN/IMPLEMENT no dibujan en el kernel; ampliar el acceso será una decisión explícita cuando haya evidencia de que lo necesitan (B7 lo verifica en negativo).
+
+**D-4.6 · Los prompts declaran el contrato conversacional.** researcher: mapa (estructura) + brainstorm (razonamiento), SYSTEM siempre como diseño y nunca como hecho. griller: consulta el mapa antes de preguntar, refleja decisiones humanas al momento, y regla de coherencia —no registrar en brief.md nada que el mapa contradiga.
 
 ### K5 — Aprobación CAS y snapshot
 
@@ -172,7 +184,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K1 | 7/7 (tests/adapters/test_code_graph.py): untracked, purga, qualnames, separación, revisión, dead-code, versión esquema | 18/18 verde | Dos correcciones fuera de alcance nominal, aceptadas por ser bugs (D-1.6, D-1.7); GRAPH_INSTRUCTIONS actualizado al esquema nuevo | ✅ |
 | K2 | 9/9 (tests/adapters/test_design_store.py): A1–A9 de la spec | 27/27 verde | Ninguna: diff limitado a domain/design.py, adapters/design/, tests y worklog | ✅ |
 | K3 | 5/5 (tests/adapters/test_workspace.py) | 32/32 verde | Ninguna: diff limitado a workspace.py, spec, tests y worklog | ✅ |
-| K4 | — | — | — | — |
+| K4 | 8/8 (tests/adapters/test_graph_tools.py): B1–B8 de la spec | 40/40 verde | Ninguna: diff limitado a graph_tools.py, registry.py, phase_registry.py, agents/*.md, tests y worklog | ✅ |
 | K5 | — | — | — | — |
 | K6 | — | — | — | — |
 | K7 | — | — | — | — |

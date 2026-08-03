@@ -5,6 +5,7 @@ from mission_orchestrator.domain.phase import PhaseConfig, PhaseName
 DEFAULT_TOOLS = ("Read", "Write", "Glob", "Grep", "Bash")
 IMPL_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep", "Bash")
 REVIEW_TOOLS = ("Read", "Write", "Glob", "Grep", "Bash")
+DESIGN_TOOLS = (*DEFAULT_TOOLS, "GraphQuery", "GraphPropose")
 
 GRAPH = "__graph_instructions__"
 
@@ -14,7 +15,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "researcher.md",
         "brainstorm-prompt.md",
         "brainstorm.md",
-        DEFAULT_TOOLS,
+        DESIGN_TOOLS,
         75,
         1200,
         {"GRAPH_INSTRUCTIONS": GRAPH},
@@ -34,7 +35,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "griller.md",
         "grill-prompt.md",
         "brief.md",
-        DEFAULT_TOOLS,
+        DESIGN_TOOLS,
         50,
         3600,
         {"BRAINSTORM": "brainstorm.md", "TASKS": "tasks.json", "GRAPH_INSTRUCTIONS": GRAPH},
