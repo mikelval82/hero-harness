@@ -29,9 +29,11 @@ class ReviewCoordinator:
         self.context = context
         self.phase_executor = phase_executor
         self.compactor = compactor
+        self._verdict_attempts: dict[str, int] = {}
 
     def commit_or_request_human(self, index: int, task: Task) -> BlockReason | None:
         verdict = self.current_verdict()
+        self._record_verdict(task, verdict)
         if verdict == ReviewVerdict.APPROVED:
             if self.services.state.get_gate_mode() == GateMode.MANUAL:
                 decision = self._wait_manual_approval(task)
@@ -41,6 +43,7 @@ class ReviewCoordinator:
             return None
         if verdict == ReviewVerdict.MINOR_CHANGES:
             self.services.notifier.notify(f"Task {task.id} has minor changes; reimplementing.")
+            self.services.logger.metric({"event": "rework", "task_id": task.id, "cause": "minor_changes"})
             block = self.phase_executor.run(
                 PhaseName.REIMPLEMENT,
                 variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
@@ -53,6 +56,17 @@ class ReviewCoordinator:
 
     def approve_without_review(self, index: int, task: Task) -> None:
         self.complete_task(index, task)
+
+    def _record_verdict(self, task: Task, verdict: str) -> None:
+        self._verdict_attempts[task.id] = self._verdict_attempts.get(task.id, 0) + 1
+        self.services.logger.metric(
+            {
+                "event": "review_verdict",
+                "task_id": task.id,
+                "verdict": verdict,
+                "attempt": self._verdict_attempts[task.id],
+            }
+        )
 
     def current_verdict(self) -> str:
         return audit_verdict(self.services.artifacts.read_text("audit.md", default=""))
@@ -146,6 +160,7 @@ class ReviewCoordinator:
 
     def _retry(self, task: Task, feedback: str) -> BlockReason | None:
         self.services.notifier.notify(f"Retrying task {task.id}.")
+        self.services.logger.metric({"event": "rework", "task_id": task.id, "cause": "human_retry"})
         block = self.phase_executor.run(
             PhaseName.REIMPLEMENT,
             variables={"TASK_ID": task.id, "TASK_TITLE": task.title, "REVIEW_FEEDBACK": feedback},

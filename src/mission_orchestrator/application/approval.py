@@ -8,7 +8,9 @@ from pathlib import Path
 from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.domain.command import CommandKind
 from mission_orchestrator.domain.design import ApplyStatus, Intent
+from mission_orchestrator.domain.map_diff import render_map_diff
 from mission_orchestrator.ports.command_bus import CommandBus
+from mission_orchestrator.ports.logger import MissionLogger
 from mission_orchestrator.ports.notifier import Notifier
 
 _ACCEPTED = {CommandKind.APPROVE, CommandKind.REJECT, CommandKind.ABORT}
@@ -37,6 +39,7 @@ class ApprovalCoordinator:
         harness_dir: Path,
         project_scope_dir: Path,
         observed_revision: int,
+        logger: MissionLogger | None = None,
     ) -> None:
         self.store = store
         self.commands = commands
@@ -44,9 +47,11 @@ class ApprovalCoordinator:
         self.harness_dir = harness_dir
         self.project_scope_dir = project_scope_dir
         self.observed_revision = observed_revision
+        self.logger = logger
 
     def wait_for_approval(self) -> ApprovalDecision:
         revision = self.store.current_revision()
+        self.notifier.notify(render_map_diff(self.store.nodes(), self.store.edges()))
         self.notifier.notify(self._summary(revision))
         command = self._wait_typed()
         if command.kind == CommandKind.ABORT:
@@ -60,6 +65,15 @@ class ApprovalCoordinator:
         snapshot = result.snapshot
         self._export(snapshot)
         self.notifier.notify(f"Architecture approved: snapshot {snapshot['snapshot_id']}")
+        if self.logger is not None:
+            self.logger.metric(
+                {
+                    "event": "approval",
+                    "snapshot_id": snapshot["snapshot_id"],
+                    "design_revision": snapshot["design_revision"],
+                    "observed_revision": snapshot["observed_revision"],
+                }
+            )
         return ApprovalDecision(ApprovalOutcome.APPROVED, snapshot_id=snapshot["snapshot_id"])
 
     def _wait_typed(self):

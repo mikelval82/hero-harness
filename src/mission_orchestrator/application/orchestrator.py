@@ -113,6 +113,7 @@ class MissionOrchestrator:
             harness_dir=self.context.harness_dir,
             project_scope_dir=scope,
             observed_revision=observed_revision,
+            logger=self.services.logger,
         ).wait_for_approval()
         if decision.kind == ApprovalOutcome.ABORTED:
             self.block = BlockReason(BlockKind.USER_ABORT, "approval", decision.reason)
@@ -167,7 +168,20 @@ class MissionOrchestrator:
             tasks = self.services.tasks.load()
         except Exception:
             tasks = []
-        return Reconciler(self.context.harness_dir, self.services.artifacts).gate_reasons(tasks)
+        reconciliation, reasons = Reconciler(self.context.harness_dir, self.services.artifacts).evaluate(tasks)
+        if reconciliation is not None:
+            counts: dict[str, int] = {}
+            for check in reconciliation.checks:
+                counts[check.state.value] = counts.get(check.state.value, 0) + 1
+            self.services.logger.metric(
+                {
+                    "event": "reconciliation",
+                    "snapshot_id": reconciliation.snapshot_id,
+                    "counts": counts,
+                    "gate": "blocked" if reasons else "open",
+                }
+            )
+        return reasons
 
     def _commit_and_merge(self, result: MissionResult) -> None:
         try:

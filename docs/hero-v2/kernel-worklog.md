@@ -60,7 +60,7 @@ flowchart LR
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | ✅ hecho | `K7` |
 | K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | ✅ hecho | `K8` |
 | K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | ✅ hecho | `K9` |
-| K10 | Render textual del diff + telemetría mínima (veredicto inicial, retrabajo, cobertura, deriva) | ligera | pendiente | — |
+| K10 | Render textual del diff + telemetría mínima (veredicto inicial, retrabajo, cobertura, deriva) | ligera | ✅ hecho | `K10` |
 
 Reglas de proceso acordadas en fase de debate:
 
@@ -237,9 +237,19 @@ Spec: [specs/K9-reconciliation-gate.md](specs/K9-reconciliation-gate.md). Tests 
 
 **D-9.5 · Reconstrucción final antes de reconciliar.** `_finalize` reconstruye el grafo observado una última vez para que la observación incluya el último resultado aceptado; la reconstrucción por tarea ya existía en el ejecutor (§9).
 
-### K10 — Diff textual y telemetría
+### K10 — Diff textual y telemetría (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K10-diff-telemetry.md](specs/K10-diff-telemetry.md). Tests D1–D6 escritos antes que la implementación; D7 cubierta por la suite previa (misiones sin mapa no emiten nada nuevo).
+
+**D-10.1 · El diff es una proyección pura.** `render_map_diff` en dominio: `+`/`~`/`-` por intención con label, locator y descripción; KEEP resumido en una línea; edges no-KEEP listados; determinista y sin I/O. El `ApprovalCoordinator` lo notifica antes del resumen, también en la re-presentación tras CONFLICT: quien aprueba ve qué aprueba.
+
+**D-10.2 · Telemetría sobre el canal existente, solo la de la hipótesis.** Cuatro eventos JSONL vía `logger.metric` (`_metrics.jsonl` por misión = correlación implícita): `approval` (snapshot y revisiones), `review_verdict` (task, veredicto, attempt — el primero es el "veredicto inicial" de §11), `rework` (causa `minor_changes` / `human_retry`, siguiendo la definición estricta de retrabajo), `reconciliation` (counts por estado y `gate` open/blocked — cobertura y deriva). Nada más: los identificadores de correlación extra llegan cuando exista el anillo que los use.
+
+**D-10.3 · `Reconciler.gate_reasons` → `evaluate`.** Devuelve `(Reconciliation | None, reasons)` para que el orquestador emita counts sin recomputar; cambio interno sin impacto en contrato público (el método era nuevo de K9 y solo lo usaba el orquestador).
+
+---
+
+**🏁 Kernel completo (K0–K10).** Los tres circuitos de la visión cierran: el epistémico (hechos vs diseño, K1–K2), el humano (dibujar → ver diff → aprobar → compilar → agrupar, K4–K7 + K10) y el de realidad (ejecutar con dependencias → reconciliar → gate de merge → medir, K8–K10). Suite final: 86/86. Checkpoint de hito real superado tras K7 con un fix de agent loop (CP-1) como único hallazgo.
 
 ---
 
@@ -260,6 +270,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | CP | 2/2 (tests/adapters/test_agent_client.py) + misión real sobre COPILOT_LEARNING | 64/64 verde | Fix CP-1 en agent loop (fuera del alcance K1–K7, aceptado por bug real); misión cortada en fase plan para ahorrar tokens | ✅ |
 | K8 | 6/6 (tests/application/test_scheduling.py): D1–D5; D6 = suite previa | 70/70 verde | `summarize_tasks` cambia formato de línea de recuento (añade `Blocked:`); test de contrato de dominio actualizado | ✅ |
 | K9 | 9/9 (tests/application/test_reconciliation.py): D1–D7; D8 = suite previa | 79/79 verde | Aceptación interactiva de discrepancias no críticas pospuesta (v1 registra sin bloquear), declarado en spec §1 | ✅ |
+| K10 | 7/7 (tests/application/test_diff_and_telemetry.py): D1–D6; D7 = suite previa | 86/86 verde | `Reconciler.gate_reasons` renombrado a `evaluate` con tupla (D-10.3) | ✅ |
 | K8 | — | — | — | — |
 | K9 | — | — | — | — |
 | K10 | — | — | — | — |

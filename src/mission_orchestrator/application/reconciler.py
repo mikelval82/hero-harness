@@ -15,14 +15,14 @@ class Reconciler:
         self.harness_dir = harness_dir
         self.artifacts = artifacts
 
-    def gate_reasons(self, tasks: list[Task]) -> list[str]:
+    def evaluate(self, tasks: list[Task]) -> tuple[Reconciliation | None, list[str]]:
         raw = self.artifacts.read_text("changeset.json", default="")
         if not raw:
-            return []
+            return None, []
         changeset = json.loads(raw)
         reconciliation = reconcile(changeset, tasks, self._observed_ids(), self._observed_revision())
         self.artifacts.write_text("reconciliation.json", reconciliation.to_json() + "\n")
-        return merge_gate_reasons(reconciliation, tasks)
+        return reconciliation, merge_gate_reasons(reconciliation, tasks)
 
     def _facts_graph(self):
         facts_path = self.harness_dir / "code_graph.db"
