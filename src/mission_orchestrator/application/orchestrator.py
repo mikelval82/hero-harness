@@ -6,6 +6,7 @@ from mission_orchestrator.application.context_compactor import ContextCompactor
 from mission_orchestrator.application.phase_executor import PhaseExecutor
 from mission_orchestrator.application.pipeline_definitions import mission_pipeline_for, mode_should_merge
 from mission_orchestrator.application.plan_compiler import PlanCompiler
+from mission_orchestrator.application.reconciler import Reconciler
 from mission_orchestrator.application.report_service import ReportService
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.application.signal_controller import SignalController
@@ -148,9 +149,25 @@ class MissionOrchestrator:
     def _finalize(self, *, completed: int) -> MissionResult:
         result = self.reporter.generate_report(completed=completed, block=self.block)
         if self.block is None and mode_should_merge(self.context.mode):
-            self._commit_and_merge(result)
+            gate_reasons = self._reconciliation_gate()
+            if gate_reasons:
+                self.services.notifier.notify(
+                    "Merge gate blocked automatic merge: " + "; ".join(gate_reasons)
+                )
+            else:
+                self._commit_and_merge(result)
         self.services.logger.log(f"mission result: {result.outcome.value}")
         return result
+
+    def _reconciliation_gate(self) -> list[str]:
+        if not self.services.artifacts.exists("changeset.json"):
+            return []
+        self.services.code_graph.build(self.context.project_dir)
+        try:
+            tasks = self.services.tasks.load()
+        except Exception:
+            tasks = []
+        return Reconciler(self.context.harness_dir, self.services.artifacts).gate_reasons(tasks)
 
     def _commit_and_merge(self, result: MissionResult) -> None:
         try:

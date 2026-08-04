@@ -59,7 +59,7 @@ flowchart LR
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | ✅ hecho | `K6` |
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | ✅ hecho | `K7` |
 | K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | ✅ hecho | `K8` |
-| K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | pendiente | — |
+| K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | ✅ hecho | `K9` |
 | K10 | Render textual del diff + telemetría mínima (veredicto inicial, retrabajo, cobertura, deriva) | ligera | pendiente | — |
 
 Reglas de proceso acordadas en fase de debate:
@@ -223,9 +223,19 @@ Spec: [specs/K8-scheduling.md](specs/K8-scheduling.md). Tests D1–D5 escritos a
 
 **D-8.4 · Estado en memoria sincronizado con el repo.** El ejecutor persiste vía `tasks.update(index, ...)` y refleja el mismo cambio en la lista en memoria (`_mark`), porque el scheduler decide sobre esa lista. El único caso que ya persistía fuera (ReviewCoordinator marca COMPLETED tras commit) se refleja en memoria tras retornar.
 
-### K9 — Reconciliación y gate de merge
+### K9 — Reconciliación y gate de merge (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K9-reconciliation-gate.md](specs/K9-reconciliation-gate.md). Tests D1–D7 escritos antes que la implementación; D8 cubierta por la suite previa (las misiones sin changeset mergean como siempre).
+
+**D-9.1 · Cuatro estados, nunca un booleano.** `PENDING` / `MATERIALIZED` / `DIVERGENT` / `UNVERIFIABLE` implementan literalmente la visión §9: la ausencia de resolución no es fallo. La evidencia es mínima y honesta: `observed_ids` del facts db contra el `locator` esperado; MODIFY solo puede verificar que el ancla sobrevive, REMOVE que desapareció, y las relaciones (CONNECT/DISCONNECT) son UNVERIFIABLE por construcción porque el grafo de llamadas quedó fuera del lienzo v1 (§6).
+
+**D-9.2 · CP-2 resuelto por separación de estados.** "No observado por alcance del analyzer" termina en UNVERIFIABLE (no crítico, registrado); "no observado porque no existe" (locator esperado ausente o ancla desaparecida) termina en DIVERGENT (crítico). Los artefactos no-Python ya no pueden producir falsa deriva: sus CHANGE/REMOVE cayeron como issues en compilación (K6) y sus CREATE sin locator quedan explícitamente no verificables.
+
+**D-9.3 · El gate retira el merge, no bloquea la misión.** `merge_gate_reasons` (tarea failed/blocked, operación PENDING, operación DIVERGENT) impide solo el merge automático y notifica; el resultado COMPLETE/PARTIAL sigue siendo del reporte. Es la distinción exacta de la visión: evaluar "el resultado y la reconciliación, no únicamente la ausencia de BlockReason". UNVERIFIABLE no bloquea: queda en `reconciliation.json` como aceptación implícita auditable.
+
+**D-9.4 · Sin changeset no hay peaje.** El gate devuelve `[]` sin computar nada cuando no existe `changeset.json`; la suite previa (HOTFIX con tarea fallida y sin mapa) sigue mergeando idéntica. Coherente con D-7.1/D-8.2: el rigor del mapa lo paga solo quien dibujó.
+
+**D-9.5 · Reconstrucción final antes de reconciliar.** `_finalize` reconstruye el grafo observado una última vez para que la observación incluya el último resultado aceptado; la reconstrucción por tarea ya existía en el ejecutor (§9).
 
 ### K10 — Diff textual y telemetría
 
@@ -249,6 +259,7 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K7 | 8/8 (tests/application/test_plan_pipeline.py): D1–D8; D9 = suite previa intacta | 62/62 verde | `project_scope_dir` añadido a MissionContext como opcional para no romper fixtures (D-7.5) | ✅ |
 | CP | 2/2 (tests/adapters/test_agent_client.py) + misión real sobre COPILOT_LEARNING | 64/64 verde | Fix CP-1 en agent loop (fuera del alcance K1–K7, aceptado por bug real); misión cortada en fase plan para ahorrar tokens | ✅ |
 | K8 | 6/6 (tests/application/test_scheduling.py): D1–D5; D6 = suite previa | 70/70 verde | `summarize_tasks` cambia formato de línea de recuento (añade `Blocked:`); test de contrato de dominio actualizado | ✅ |
+| K9 | 9/9 (tests/application/test_reconciliation.py): D1–D7; D8 = suite previa | 79/79 verde | Aceptación interactiva de discrepancias no críticas pospuesta (v1 registra sin bloquear), declarado en spec §1 | ✅ |
 | K8 | — | — | — | — |
 | K9 | — | — | — | — |
 | K10 | — | — | — | — |
