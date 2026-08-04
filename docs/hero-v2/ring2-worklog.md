@@ -13,7 +13,7 @@ Decisión de alcance (2026-08-04): Mermaid descartado como motor del lienzo (com
 | B0 | Setup del anillo | Este worklog | ✅ hecho |
 | B1 | `POST /api/design/propose` | Operaciones de diseño humanas por el mismo CAS que los agentes, con evento publicado | ✅ hecho |
 | B2 | Inspector de nodos en la UI | Click → panel de campos; editar label/intent/descripción/locator vía B1 | ✅ hecho |
-| B3 | Gestos de creación | Crear nodo (doble click en carril), dibujar edge (arrastre nodo→nodo), marcar REMOVE | ⬜ |
+| B3 | Gestos de creación | Crear nodo (doble click en carril), dibujar edge (arrastre nodo→nodo), marcar REMOVE | ✅ hecho |
 | B4 | Conflictos CAS en la UI | Revisión movida durante la edición → refetch + aviso, nunca sobrescritura silenciosa | ⬜ |
 | B5 | Checkpoint: mapa dibujado a mano | Ajustar el mapa en el navegador, aprobar y compilar changeset de él | ⬜ |
 
@@ -39,9 +39,24 @@ En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesan
 
 **D-B2.3 · Validación en navegador antes del commit (protocolo D-A5.4).** Demo sembrada: click en nodo → inspector con valores; editar label+locator → APPLIED, revisión 1→2, lienzo re-renderizado con el nuevo label y locator en el tooltip/diff, historial `human-… (HUMAN, base 1)`, evento `design_proposal` en el feed. El bucle reactivo de D-B1.4 confirmado: el refresh llegó por el long-poll, no por lógica ad-hoc.
 
+### B3 — Gestos de creación ([spec](specs/B3-creation-gestures.md))
+
+**D-B3.1 · Inspector multimodo, no cuatro paneles.** Un solo panel con visibilidad de filas por modo (nodo / nodo nuevo / edge nuevo / edge): los cuatro gestos comparten guardado, borrado y línea de estado. Cuatro paneles habrían cuadruplicado el manejo de resultados de B1.
+
+**D-B3.2 · Los tres carriles se dibujan siempre.** Un carril vacío debe aceptar doble click (crear el primer nodo SYSTEM de un mapa vacío); además estabiliza la geometría: `laneFromY` elige el carril más cercano al cursor.
+
+**D-B3.3 · Validación delegada al store.** El cliente solo hace auto-slug del id y diff de campos; duplicados, endpoints inexistentes y enums inválidos los rechaza K4 y el inspector muestra el `detail`. Cero reglas duplicadas entre cliente y dominio.
+
+**D-B3.4 · Borrado en dos clicks, sin `prompt()`.** El botón se arma ("Confirm delete") y el segundo click envía — compatible con navegadores embebidos (hallazgo A6-1).
+
+**D-B3.5 · Veredicto D-A5.1 (H7): el SVG artesanal aguanta.** Los cuatro gestos (crear nodo, arrastre de edge con línea fantasma, borrar nodo/edge, editar) funcionan con ~120 líneas de JS sin librería. Cytoscape queda diferido hasta que aparezca una necesidad que lo justifique (multi-selección, layout automático de mapas grandes, undo visual).
+
+**Validación en navegador (H4–H6):** doble click en CODE → `metrics-reporter` creado con auto-slug, `HUMAN`, renderizado en su carril (rev 1→2); shift+arrastre cache→metrics-reporter → edge `reports` (rev 2→3); borrado de edge y nodo con confirmación doble (rev 3→5, cascada del store verificada). Historial completo `human-…` en la UI.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
 |---|---|---|---|---|
 | B1 | 9/9 (tests/adapters/test_design_propose.py): G1–G7 + G1b; G8 = suite previa | 131/131 verde | Ninguna: diff limitado a server.py, spec, tests y worklog | ✅ |
 | B2 | 2/2 (tests/adapters/test_node_inspector.py): I1–I2; I3 = suite previa; I4 = navegador real (D-B2.3) | 133/133 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
+| B3 | 2/2 (tests/adapters/test_creation_gestures.py): H1–H2; H3 = suite previa; H4–H7 = navegador real (D-B3.5) | 135/135 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
