@@ -38,6 +38,15 @@
   #events .t { color: var(--dim); margin-right: 6px; font-family: Consolas, monospace; font-size: 11px; }
   #events .k { color: var(--accent); margin-right: 6px; }
   #history-section { flex: 0 0 auto; max-height: 22%; }
+  #inspector { display: none; }
+  #inspector.open { display: block; }
+  #inspector .row { display: flex; gap: 6px; margin: 4px 0; align-items: center; }
+  #inspector label { width: 82px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  #inspector input, #inspector select, #inspector textarea { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; font-size: 12px; font-family: inherit; }
+  #inspector textarea { resize: vertical; min-height: 40px; }
+  #insp-meta { color: var(--dim); font-size: 11px; font-family: Consolas, monospace; margin: 2px 0 6px; }
+  #insp-status { font-size: 11px; margin-top: 6px; min-height: 14px; }
+  #insp-status.ok { color: var(--create); } #insp-status.bad { color: var(--remove); }
   #history { list-style: none; margin: 0; padding: 0; font-size: 11px; color: var(--dim); font-family: Consolas, monospace; }
   .node rect { rx: 7; stroke-width: 1.6; fill: var(--panel); }
   .node text { fill: var(--text); font-size: 12px; }
@@ -87,6 +96,26 @@
         <button id="send">Send</button>
       </div>
     </section>
+    <section id="inspector">
+      <h2>Node inspector</h2>
+      <div id="insp-meta"></div>
+      <div class="row"><label>Label</label><input id="insp-label"></div>
+      <div class="row"><label>Intent</label>
+        <select id="insp-intent">
+          <option value="KEEP">KEEP</option>
+          <option value="CREATE">CREATE</option>
+          <option value="CHANGE">CHANGE</option>
+          <option value="REMOVE">REMOVE</option>
+        </select>
+      </div>
+      <div class="row"><label>Locator</label><input id="insp-locator" placeholder="expected observed id, e.g. src/mod.py"></div>
+      <div class="row"><label>Description</label><textarea id="insp-description"></textarea></div>
+      <div class="actions">
+        <button id="insp-save">Save</button>
+        <button id="insp-close">Close</button>
+      </div>
+      <div id="insp-status"></div>
+    </section>
     <section id="events-section">
       <h2>Events</h2>
       <ul id="events"></ul>
@@ -130,6 +159,7 @@
   });
 
   // --- graph rendering: one lane per level ---
+  const state = { designRevision: 0, nodes: {} };
   const LANES = ["SYSTEM", "PACKAGE", "CODE"];
   const NS = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, parent) => {
@@ -163,7 +193,8 @@
     }
     for (const n of map.nodes) {
       const p = positions[n.id];
-      const group = el("g", { class: "node " + n.intent, transform: `translate(${p.x - 90},${p.y - 30})` }, scene);
+      const group = el("g", { class: "node " + n.intent, transform: `translate(${p.x - 90},${p.y - 30})`, cursor: "pointer" }, scene);
+      group.addEventListener("click", () => openInspector(n.id));
       el("rect", { width: 180, height: 60 }, group);
       const title = el("title", {}, group);
       title.textContent = `${n.id}\nintent: ${n.intent} · provenance: ${n.provenance}\n` +
@@ -184,6 +215,8 @@
         api("/api/snapshot").then(r => r.json()),
       ]);
       renderMap(map);
+      state.designRevision = map.design_revision;
+      state.nodes = Object.fromEntries(map.nodes.map(n => [n.id, n]));
       document.getElementById("mission-meta").textContent = `design revision ${map.design_revision}`;
       document.getElementById("snapshot-meta").textContent =
         snapshot ? `approved snapshot ${snapshot.snapshot_id}` : "no approved snapshot yet";
@@ -228,6 +261,60 @@
   document.getElementById("abort").onclick = () => { const r = askReason("Abort reason:"); if (r !== null) send("/abort " + r); };
   document.getElementById("send").onclick = () => { const box = document.getElementById("answer"); send(box.value.trim()); box.value = ""; };
   document.getElementById("answer").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("send").click(); });
+
+  // --- node inspector ---
+  let inspected = null;
+  const inspField = (id) => document.getElementById(id);
+  function openInspector(nodeId) {
+    const node = state.nodes[nodeId];
+    if (!node) return;
+    inspected = nodeId;
+    inspField("insp-meta").textContent = `${node.id} · ${node.level} · ${node.provenance} · ${node.location}`;
+    inspField("insp-label").value = node.label || "";
+    inspField("insp-intent").value = node.intent;
+    inspField("insp-locator").value = node.locator || "";
+    inspField("insp-description").value = node.description || "";
+    inspField("insp-status").textContent = "";
+    inspField("insp-status").className = "";
+    document.getElementById("inspector").classList.add("open");
+  }
+  function changedFields(node) {
+    const fields = {};
+    const label = inspField("insp-label").value.trim();
+    const intent = inspField("insp-intent").value;
+    const locator = inspField("insp-locator").value.trim();
+    const description = inspField("insp-description").value.trim();
+    if (label && label !== node.label) fields.label = label;
+    if (intent !== node.intent) fields.intent = intent;
+    if (locator !== (node.locator || "")) fields.locator = locator || null;
+    if (description !== (node.description || "")) fields.description = description;
+    return fields;
+  }
+  document.getElementById("insp-close").onclick = () => {
+    inspected = null;
+    document.getElementById("inspector").classList.remove("open");
+  };
+  document.getElementById("insp-save").onclick = async () => {
+    const node = state.nodes[inspected];
+    if (!node) return;
+    const fields = changedFields(node);
+    if (!Object.keys(fields).length) { document.getElementById("insp-close").click(); return; }
+    const response = await fetch("/api/design/propose", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        base_revision: state.designRevision,
+        operations: [{ op: "update_node", id: node.id, ...fields }],
+      }),
+    }).then(r => r.json());
+    const status = inspField("insp-status");
+    status.textContent = response.status + (response.detail ? ": " + response.detail : "");
+    status.className = response.status === "APPLIED" ? "ok" : "bad";
+    if (response.status === "APPLIED") {
+      await refresh();
+      if (inspected) openInspector(inspected);
+    }
+  };
 
   // --- event feed via long-poll ---
   let lastEvent = 0;
