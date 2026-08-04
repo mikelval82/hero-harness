@@ -23,7 +23,7 @@ code-graph = "mission_orchestrator.adapters.analysis.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-mission_orchestrator = ["py.typed"]
+mission_orchestrator = ["py.typed", "adapters/web/static/*.html"]
 
 [tool.ruff]
 line-length = 100

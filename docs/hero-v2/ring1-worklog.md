@@ -13,7 +13,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 | A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ✅ hecho |
 | A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía long-poll | ✅ hecho |
 | A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ✅ hecho |
-| A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ⬜ |
+| A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ✅ hecho |
 | A6 | Checkpoint: misión real aprobada desde la UI | Validación de punta a punta en navegador | ⬜ |
 
 Restricciones heredadas de la visión: la UI consume contratos públicos del núcleo (nunca SQLite directo); prototipo ligero sin cadena de frontend (librería de grafos madura solo si la edición lo exige); todo anillo conserva el modo headless.
@@ -64,6 +64,16 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A4.2 · El servidor sin bus es de solo lectura explícita.** `commands` es opcional; sin él, `/api/command` responde `503`. Permite servir el estado de una misión terminada (inspección post-mortem) sin fingir que se puede interactuar.
 
+### A5 — UI de lectura ([spec](specs/A5-read-ui.md))
+
+**D-A5.1 · Un fichero, cero dependencias.** `static/index.html` con HTML+CSS+JS inline: sin npm, sin CDN, funciona offline y se sirve tal cual. Exactamente el "prototipo ligero" de §10; la librería de grafos madura queda condicionada a que los gestos de edición del anillo 2 lo desborden.
+
+**D-A5.2 · Layout por carriles de nivel, no force-directed.** SYSTEM/PACKAGE/CODE como filas fijas: el eje vertical significa nivel de abstracción, que es la semántica del modelo, y el render es determinista (mismo mapa → misma imagen). Un layout físico aleatorio habría sido más vistoso y menos legible. Jerarquía por `parent_id` diferida a que un mapa real la pida.
+
+**D-A5.3 · Reactividad por eventos, no por timer.** La UI refresca mapa/diff/snapshot solo cuando el long-poll de A3 entrega eventos nuevos; sin actividad no hay tráfico. El feed muestra el pulso de A2 (fases, tools, notificaciones) con el mismo texto del log.
+
+**D-A5.4 · Validación visual en navegador real antes del commit.** Servidor de demo sembrado + Playwright: render de carriles/intents/edges verificado por captura, botón Approve verificado contra `/api/command` (200, `kind=approve`). Hallazgo corregido en el acto: cliente que recarga durante un long-poll producía `ConnectionAbortedError` ruidoso en el servidor → silenciado como desconexión normal.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -73,3 +83,4 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 | A2 | 6/6 (tests/application/test_agent_progress.py): P1–P5; P6 = suite previa | 105/105 verde | D-A1.5 superada (campo `events` añadido en A2 con consumidor real); test E6 de A1 actualizado al nuevo contrato de `tool_call` | ✅ |
 | A3 | 8/8 (tests/adapters/test_web_server.py): W1–W7; W8 = suite previa | 113/113 verde | SSE del backlog sustituido por long-poll (D-A3.1, sancionado por §10) | ✅ |
 | A4 | 6/6 (tests/adapters/test_web_commands.py): C1–C6; C7 = suite previa | 119/119 verde | Ninguna: diff limitado a server.py, cli.py, spec, tests y worklog | ✅ |
+| A5 | 4/4 (tests/adapters/test_read_ui.py): U1–U4; U5 = suite previa + validación visual en navegador (D-A5.4) | 123/123 verde | Namespace SVG de w3.org excluido del chequeo de recursos externos (identificador XML, no recurso); fix de conexiones abortadas en long-poll | ✅ |

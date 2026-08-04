@@ -17,6 +17,7 @@ from mission_orchestrator.ports.command_bus import CommandBus
 _LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 _MAX_WAIT_SECONDS = 30.0
 _POLL_INTERVAL_SECONDS = 0.4
+_STATIC_DIR = Path(__file__).parent / "static"
 
 _PLACEHOLDER_HTML = "<!doctype html><title>HERO</title><p>HERO mission server online.</p>"
 
@@ -118,7 +119,7 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
 
             route = parsed.path
             if route == "/":
-                self._send_html(_PLACEHOLDER_HTML)
+                self._send_html(_index_html())
             elif route == "/api/map":
                 self._send_json(server.map_payload())
             elif route == "/api/diff":
@@ -178,21 +179,21 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
 
         def _send_json(self, payload: object, *, status: int = 200) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_bytes(body, "application/json; charset=utf-8", status)
 
         def _send_html(self, html: str) -> None:
-            body = html.encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_bytes(html.encode("utf-8"), "text/html; charset=utf-8", 200)
+
+        def _send_bytes(self, body: bytes, content_type: str, status: int) -> None:
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (ConnectionError, BrokenPipeError):
+                pass  # client went away (e.g. reload during long-poll)
 
     return Handler
 
@@ -202,6 +203,13 @@ def _int_param(query: dict[str, list[str]], key: str, default: int) -> int:
         return int(query.get(key, [default])[0])
     except (TypeError, ValueError):
         return default
+
+
+def _index_html() -> str:
+    path = _STATIC_DIR / "index.html"
+    if path.exists():
+        return path.read_text(encoding="utf-8")
+    return _PLACEHOLDER_HTML
 
 
 def _float_param(query: dict[str, list[str]], key: str, default: float) -> float:
