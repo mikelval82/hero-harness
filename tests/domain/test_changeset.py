@@ -146,6 +146,30 @@ class ChangesetCompilerTest(unittest.TestCase):
         self.assertEqual(result.operations[0].location, "EXTERNAL")
         self.assertEqual(result.issues, ())
 
+    def test_c9_create_without_locator_derives_from_pathlike_label(self) -> None:
+        result = compile_changeset(
+            _snapshot([_node("case-index-py", "CREATE", label="tools/case_index.py")]),
+            observed_ids=set(),
+        )
+        self.assertEqual([op.id for op in result.operations], ["create:case-index-py"])
+        self.assertEqual(result.operations[0].locator, "tools/case_index.py")
+
+    def test_c10_create_with_prose_label_keeps_locator_none(self) -> None:
+        result = compile_changeset(
+            _snapshot([_node("cache", "CREATE", label="Cache layer for API")]),
+            observed_ids=set(),
+        )
+        self.assertEqual([op.id for op in result.operations], ["create:cache"])
+        self.assertIsNone(result.operations[0].locator)
+
+    def test_c11_derived_locator_counts_for_materialization(self) -> None:
+        result = compile_changeset(
+            _snapshot([_node("case-index-py", "CREATE", label="tools/case_index.py")]),
+            observed_ids={"tools/case_index.py"},
+        )
+        self.assertEqual(result.operations, ())
+        self.assertEqual([item.reason for item in result.skipped], ["already_materialized"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,7 +46,7 @@ class SubprocessGitService:
         if staged.returncode == 0:
             return
         subject = f"feat: {task_description[:70].strip()}"
-        self._run(["git", "commit", "-m", subject, "-m", summary])
+        self._commit_with_signing_fallback(["commit", "-m", subject, "-m", summary])
 
     def run_target_validation(self, project_dir: Path) -> bool:
         script = self._validation_script(project_dir)
@@ -74,6 +74,11 @@ class SubprocessGitService:
             ["git", "merge", "--no-ff", "-m", f"Merge branch '{branch}' into develop", branch],
             check=False,
         )
+        if result.returncode != 0 and self._is_signing_failure(result.stderr):
+            result = self._run(
+                ["git", "-c", "commit.gpgsign=false", "merge", "--no-ff", "-m", f"Merge branch '{branch}' into develop", branch],
+                check=False,
+            )
         if result.returncode == 0:
             return True
         self._run(["git", "merge", "--abort"], check=False)
@@ -91,6 +96,20 @@ class SubprocessGitService:
         if check and result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"command failed: {args}")
         return result
+
+    def _commit_with_signing_fallback(self, args: list[str]) -> None:
+        result = self._run(["git", *args], check=False)
+        if result.returncode == 0:
+            return
+        if self._is_signing_failure(result.stderr):
+            self._run(["git", "-c", "commit.gpgsign=false", *args])
+            return
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"command failed: git {args}")
+
+    @staticmethod
+    def _is_signing_failure(stderr: str) -> bool:
+        lowered = (stderr or "").lower()
+        return "gpg" in lowered and "sign" in lowered
 
     def _ensure_identity(self) -> None:
         name = self._run(["git", "config", "user.name"], check=False).stdout.strip()

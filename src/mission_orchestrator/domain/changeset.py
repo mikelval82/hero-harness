@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 
@@ -45,6 +46,10 @@ def compile_changeset(snapshot: dict, observed_ids: set[str]) -> ChangeSet:
     for node in nodes.values():
         intent = node.get("intent", "KEEP")
         locator = node.get("locator")
+        if intent == "CREATE" and not locator:
+            locator = _locator_from_label(node.get("label", ""))
+            if locator:
+                node = node | {"locator": locator}
         resolved = bool(locator) and locator in observed_ids
         if intent == "KEEP":
             continue
@@ -107,6 +112,13 @@ def compile_changeset(snapshot: dict, observed_ids: set[str]) -> ChangeSet:
         skipped=tuple(sorted(skipped, key=lambda item: item.target_node)),
         issues=tuple(sorted(issues, key=lambda item: item.target_node)),
     )
+
+
+def _locator_from_label(label: str) -> str | None:
+    # CP-4: a path-like label is the expected observed id of the artifact to create.
+    if re.fullmatch(r"[\w.\-]+(/[\w.\-]+)+(:[\w.]+)?", label):
+        return label
+    return None
 
 
 def _operation(prefix: str, kind: str, node: dict) -> ChangeOperation:
