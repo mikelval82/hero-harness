@@ -14,7 +14,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 | A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía long-poll | ✅ hecho |
 | A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ✅ hecho |
 | A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ✅ hecho |
-| A6 | Checkpoint: misión real aprobada desde la UI | Validación de punta a punta en navegador | ⬜ |
+| A6 | Checkpoint: misión real aprobada desde la UI | Validación de punta a punta en navegador | ✅ hecho |
 
 Restricciones heredadas de la visión: la UI consume contratos públicos del núcleo (nunca SQLite directo); prototipo ligero sin cadena de frontend (librería de grafos madura solo si la edición lo exige); todo anillo conserva el modo headless.
 
@@ -74,6 +74,22 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A5.4 · Validación visual en navegador real antes del commit.** Servidor de demo sembrado + Playwright: render de carriles/intents/edges verificado por captura, botón Approve verificado contra `/api/command` (200, `kind=approve`). Hallazgo corregido en el acto: cliente que recarga durante un long-poll producía `ConnectionAbortedError` ruidoso en el servidor → silenciado como desconexión normal.
 
+### A6 — Checkpoint del anillo: misión real aprobada desde la UI (2026-08-04, ✅ aprobado)
+
+Misión `focused --web` sobre COPILOT_LEARNING (`feature/case-index-v3`), operada íntegramente desde el navegador y abortada tras validar el circuito web para ahorrar tokens (el pipeline de ejecución ya se validó en el checkpoint 2 del kernel).
+
+1. **A2 en producción** — El feed mostró en vivo cada tool del researcher (`find`, `GraphQuery`, lecturas, 9 `GraphPropose`) y los `phase_started/phase_ended` de research/structure/spec.
+2. **A5 reactiva** — Al terminar research, el mapa real apareció en el lienzo sin recargar: 7 nodos en carriles (CREATE verde `tools/case_index.py`, CHANGE ámbar `INDEX.md`, 5 KEEP), edges `generates`/`reads`, diff coloreado idéntico al de stdin.
+3. **A4 real** — Approve pulsado en el navegador → snapshot `9187e49e210c`, changeset compilado, fase structure arrancada. Abort vía `POST /api/command` → misión cerró limpia en el límite de fase (`BLOCKED | user_abort`, reporte generado).
+4. **CP-4 confirmado en producción** — El researcher puso `locator` al nodo CREATE tras la mitigación del schema: el diff mostró `(tools/case_index.py)` y la materialización sería verificable.
+5. **Historial útil** — La UI expuso los intentos CAS del researcher (5 REJECTED por validación/conflicto, 4 APPLIED): el modo por turnos es visible y auditable.
+
+**Hallazgo A6-1 · `prompt()` no existe en navegadores embebidos.** Reject/Abort fallaban en silencio en el navegador integrado de VS Code. Corregido: fallback al campo de respuesta como fuente de la razón cuando `prompt()` lanza.
+
+**Hallazgo A6-2 · Flaky de la suite cazado.** Los POSTs rechazados (401/403) respondían sin drenar el body pendiente y Windows abortaba la conexión (`WinError 10053`) intermitentemente. Corregido: el handler lee el body antes de responder. Tres pasadas verdes consecutivas (123/123).
+
+**🏁 Anillo 1 completo (A0–A6).** El pizarrón vive en el navegador: mapa, diff, aprobación, pulso del agente e historial, sin sacrificar el modo headless. Siguiente anillo según §12: edición manual desde el lienzo.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -84,3 +100,4 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 | A3 | 8/8 (tests/adapters/test_web_server.py): W1–W7; W8 = suite previa | 113/113 verde | SSE del backlog sustituido por long-poll (D-A3.1, sancionado por §10) | ✅ |
 | A4 | 6/6 (tests/adapters/test_web_commands.py): C1–C6; C7 = suite previa | 119/119 verde | Ninguna: diff limitado a server.py, cli.py, spec, tests y worklog | ✅ |
 | A5 | 4/4 (tests/adapters/test_read_ui.py): U1–U4; U5 = suite previa + validación visual en navegador (D-A5.4) | 123/123 verde | Namespace SVG de w3.org excluido del chequeo de recursos externos (identificador XML, no recurso); fix de conexiones abortadas en long-poll | ✅ |
+| A6 | Misión real operada desde el navegador (mapa en vivo, approve, abort) | 123/123 verde ×3 pasadas | Hallazgos A6-1 (`prompt()` embebido → fallback) y A6-2 (drenaje de body en POSTs rechazados → flaky resuelto) corregidos en el propio checkpoint | ✅ |

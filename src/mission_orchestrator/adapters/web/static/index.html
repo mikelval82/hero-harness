@@ -216,8 +216,16 @@
     });
   }
   document.getElementById("approve").onclick = () => send("/approve");
-  document.getElementById("reject").onclick = () => { const r = prompt("Reject reason:"); if (r !== null) send("/reject " + r); };
-  document.getElementById("abort").onclick = () => { const r = prompt("Abort reason:"); if (r !== null) send("/abort " + r); };
+  // prompt() is unavailable in some embedded browsers: fall back to the reply box as reason source.
+  const askReason = (label) => {
+    try { return prompt(label); } catch (err) {
+      const box = document.getElementById("answer");
+      const reason = box.value.trim(); box.value = "";
+      return reason;
+    }
+  };
+  document.getElementById("reject").onclick = () => { const r = askReason("Reject reason:"); if (r !== null) send("/reject " + r); };
+  document.getElementById("abort").onclick = () => { const r = askReason("Abort reason:"); if (r !== null) send("/abort " + r); };
   document.getElementById("send").onclick = () => { const box = document.getElementById("answer"); send(box.value.trim()); box.value = ""; };
   document.getElementById("answer").addEventListener("keydown", (e) => { if (e.key === "Enter") document.getElementById("send").click(); });
 

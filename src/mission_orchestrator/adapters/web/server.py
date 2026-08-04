@@ -138,6 +138,7 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
         def do_POST(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             query = parse_qs(parsed.query)
+            raw_body = self.rfile.read(int(self.headers.get("Content-Length", "0") or "0"))
             if not self._origin_allowed():
                 self._send_json({"error": "forbidden origin"}, status=403)
                 return
@@ -151,8 +152,7 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": "command bus unavailable"}, status=503)
                 return
             try:
-                length = int(self.headers.get("Content-Length", "0"))
-                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                body = json.loads(raw_body.decode("utf-8"))
                 text = str(body["text"])
             except Exception:
                 self._send_json({"error": "invalid body"}, status=400)
