@@ -12,7 +12,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 | A1 | Puerto `EventPublisher` + tabla de eventos | Eventos tipados append-only en SQLite con correlación misión/snapshot/tarea; los puntos que hoy notifican también publican | ✅ hecho |
 | A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ✅ hecho |
 | A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía long-poll | ✅ hecho |
-| A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ⬜ |
+| A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ✅ hecho |
 | A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ⬜ |
 | A6 | Checkpoint: misión real aprobada desde la UI | Validación de punta a punta en navegador | ⬜ |
 
@@ -58,6 +58,12 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A3.4 · `--web` opcional, headless intacto.** El servidor solo arranca con el flag; corre como hilo daemon y no impide la salida del proceso. Sin `--web`, la misión es byte a byte la de antes.
 
+### A4 — Comandos por HTTP ([spec](specs/A4-web-commands.md))
+
+**D-A4.1 · Un solo gate para tres transportes.** `POST /api/command` recibe el texto crudo (`/approve`, `/reject <razón>`, respuesta plana) y lo pasa por `parse_control_command` — exactamente la misma función que stdin y Telegram — antes de publicar en el mismo `CommandBus`. Cero lógica nueva de interpretación: la web no puede divergir de los otros canales ni en un edge case.
+
+**D-A4.2 · El servidor sin bus es de solo lectura explícita.** `commands` es opcional; sin él, `/api/command` responde `503`. Permite servir el estado de una misión terminada (inspección post-mortem) sin fingir que se puede interactuar.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -66,3 +72,4 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 | A1 | 8/8 (tests/adapters/test_event_log.py): E1–E7 de la spec; E8 = suite previa | 99/99 verde | `AppServices` sin campo `events` hasta A3 (D-A1.5), declarado en spec §2.5 | ✅ |
 | A2 | 6/6 (tests/application/test_agent_progress.py): P1–P5; P6 = suite previa | 105/105 verde | D-A1.5 superada (campo `events` añadido en A2 con consumidor real); test E6 de A1 actualizado al nuevo contrato de `tool_call` | ✅ |
 | A3 | 8/8 (tests/adapters/test_web_server.py): W1–W7; W8 = suite previa | 113/113 verde | SSE del backlog sustituido por long-poll (D-A3.1, sancionado por §10) | ✅ |
+| A4 | 6/6 (tests/adapters/test_web_commands.py): C1–C6; C7 = suite previa | 119/119 verde | Ninguna: diff limitado a server.py, cli.py, spec, tests y worklog | ✅ |

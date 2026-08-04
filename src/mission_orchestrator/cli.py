@@ -120,7 +120,9 @@ def main(argv: list[str] | None = None) -> int:
         ).start()
     StdinListener(commands).start_if_tty()
     if args.web:
-        web = MissionWebServer(workspace.harness_dir, workspace.mission_tag, port=args.web_port)
+        web = MissionWebServer(
+            workspace.harness_dir, workspace.mission_tag, port=args.web_port, commands=commands
+        )
         logger.log(f"web server: {web.start()}")
     result = MissionOrchestrator(services, context).run()
     return 0 if result.block is None else 2

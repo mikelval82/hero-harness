@@ -10,7 +10,9 @@ from urllib.parse import parse_qs, urlparse
 
 from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.adapters.events.sqlite_log import SqliteEventLog
+from mission_orchestrator.domain.command import parse_control_command
 from mission_orchestrator.domain.map_diff import render_map_diff
+from mission_orchestrator.ports.command_bus import CommandBus
 
 _LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 _MAX_WAIT_SECONDS = 30.0
@@ -20,11 +22,20 @@ _PLACEHOLDER_HTML = "<!doctype html><title>HERO</title><p>HERO mission server on
 
 
 class MissionWebServer:
-    def __init__(self, harness_dir: Path, mission: str, *, host: str = "127.0.0.1", port: int = 0) -> None:
+    def __init__(
+        self,
+        harness_dir: Path,
+        mission: str,
+        *,
+        host: str = "127.0.0.1",
+        port: int = 0,
+        commands: CommandBus | None = None,
+    ) -> None:
         self.harness_dir = harness_dir
         self.mission = mission
         self.host = host
         self.port = port
+        self.commands = commands
         self.token = secrets.token_urlsafe(16)
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -122,6 +133,35 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
                 self._send_json(server.events_payload(after, wait))
             else:
                 self._send_json({"error": "not found"}, status=404)
+
+        def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            query = parse_qs(parsed.query)
+            if not self._origin_allowed():
+                self._send_json({"error": "forbidden origin"}, status=403)
+                return
+            if not self._authorized(query):
+                self._send_json({"error": "unauthorized"}, status=401)
+                return
+            if parsed.path != "/api/command":
+                self._send_json({"error": "not found"}, status=404)
+                return
+            if server.commands is None:
+                self._send_json({"error": "command bus unavailable"}, status=503)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length).decode("utf-8"))
+                text = str(body["text"])
+            except Exception:
+                self._send_json({"error": "invalid body"}, status=400)
+                return
+            command = parse_control_command(text)
+            if command is None:
+                self._send_json({"error": "empty command"}, status=400)
+                return
+            server.commands.publish(command)
+            self._send_json({"accepted": True, "kind": command.kind.value})
 
         def _authorized(self, query: dict[str, list[str]]) -> bool:
             header = self.headers.get("Authorization", "")
