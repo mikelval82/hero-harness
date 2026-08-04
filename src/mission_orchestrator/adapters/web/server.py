@@ -4,6 +4,7 @@ import json
 import secrets
 import threading
 import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -101,6 +102,36 @@ class MissionWebServer:
                 return {"events": [event.__dict__ for event in events]}
             time.sleep(_POLL_INTERVAL_SECONDS)
 
+    def propose_design(self, body: dict) -> dict:
+        operation_id = str(body.get("operation_id") or f"human-{uuid.uuid4().hex[:8]}")
+        base_revision = body["base_revision"]
+        operations = body["operations"]
+        if not isinstance(base_revision, int) or not isinstance(operations, list):
+            raise ValueError("base_revision must be int and operations a list")
+        store = DesignStore(self.harness_dir / "design.db")
+        result = store.apply(
+            operation_id=operation_id,
+            author="HUMAN",
+            base_revision=base_revision,
+            operations=operations,
+        )
+        payload = {
+            "operation_id": operation_id,
+            "status": result.status.value,
+            "design_revision": store.current_revision(),
+            "detail": result.detail,
+        }
+        SqliteEventLog(self.harness_dir, mission=self.mission).publish(
+            "design_proposal",
+            {
+                "operation_id": operation_id,
+                "author": "HUMAN",
+                "status": result.status.value,
+                "design_revision": payload["design_revision"],
+            },
+        )
+        return payload
+
 
 def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
@@ -145,9 +176,14 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
             if not self._authorized(query):
                 self._send_json({"error": "unauthorized"}, status=401)
                 return
-            if parsed.path != "/api/command":
+            if parsed.path == "/api/command":
+                self._handle_command(raw_body)
+            elif parsed.path == "/api/design/propose":
+                self._handle_design_propose(raw_body)
+            else:
                 self._send_json({"error": "not found"}, status=404)
-                return
+
+        def _handle_command(self, raw_body: bytes) -> None:
             if server.commands is None:
                 self._send_json({"error": "command bus unavailable"}, status=503)
                 return
@@ -163,6 +199,15 @@ def _build_handler(server: MissionWebServer) -> type[BaseHTTPRequestHandler]:
                 return
             server.commands.publish(command)
             self._send_json({"accepted": True, "kind": command.kind.value})
+
+        def _handle_design_propose(self, raw_body: bytes) -> None:
+            try:
+                body = json.loads(raw_body.decode("utf-8"))
+                payload = server.propose_design(body)
+            except (KeyError, ValueError, TypeError, json.JSONDecodeError):
+                self._send_json({"error": "invalid body"}, status=400)
+                return
+            self._send_json(payload)
 
         def _authorized(self, query: dict[str, list[str]]) -> bool:
             header = self.headers.get("Authorization", "")
