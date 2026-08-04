@@ -15,7 +15,7 @@ Decisión de alcance (2026-08-04): Mermaid descartado como motor del lienzo (com
 | B2 | Inspector de nodos en la UI | Click → panel de campos; editar label/intent/descripción/locator vía B1 | ✅ hecho |
 | B3 | Gestos de creación | Crear nodo (doble click en carril), dibujar edge (arrastre nodo→nodo), marcar REMOVE | ✅ hecho |
 | B4 | Conflictos CAS en la UI | Revisión movida durante la edición → refetch + aviso, nunca sobrescritura silenciosa | ✅ hecho |
-| B5 | Checkpoint: mapa dibujado a mano | Ajustar el mapa en el navegador, aprobar y compilar changeset de él | ⬜ |
+| B5 | Checkpoint: mapa dibujado a mano | Ajustar el mapa en el navegador, aprobar y compilar changeset de él | ✅ hecho |
 
 En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesanal, se adopta una librería de grafos madura (Cytoscape.js) como dependencia opcional del adaptador web.
 
@@ -61,6 +61,19 @@ En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesan
 
 **Validación en navegador (J3):** con el inspector abierto y label editado, una escritura fuera de banda movió la revisión 1→2; Save → `CONFLICT: map reloaded at revision 2`, valores intactos, nodo intruso visible en el lienzo; segundo Save → APPLIED (rev 3). El historial del store registra la secuencia íntegra: `#3 CONFLICT (base 1)` → `#4 APPLIED (base 2)`.
 
+### B5 — Checkpoint del anillo: mapa co-diseñado por humano y agente (2026-08-04, ✅ aprobado)
+
+Misión `focused --web` real sobre COPILOT_LEARNING (`feature/case-index-v5`), abortada tras structure para ahorrar tokens. El researcher propuso su mapa (rev 2) y el humano lo **co-diseñó desde el navegador** antes de aprobar:
+
+1. **Edición** — descripción del CREATE del agente refinada vía inspector (`Entries sorted alphabetically by title`, rev 3).
+2. **Creación** — nodo `tools-test-case-index-py` dibujado con doble click en CODE (locator incluido, rev 4) y edge `verifies` con shift+arrastre (rev 5).
+3. **CAS de aprobación en producción** — el primer Approve chocó con la revisión movida por el propio edge: el coordinador K5 lo rechazó ("the map changed while waiting") y re-mostró el diff completo de rev 5. Segundo Approve → snapshot `2bbb17a1452d`. Nadie aprueba lo que no ha visto.
+4. **Artefactos verificados** — `approved_snapshot.json`: 6 nodos con el humano dentro (`tools-test-case-index-py · HUMAN · CREATE`) y el edge `verifies`. `changeset.json`: 5 operaciones, **cero issues**, incluyendo `create:tools-test-case-index-py`. Y el remate: el structurer generó **`task-2` desde el nodo dibujado a mano** — el gesto del humano se volvió tarea ejecutable por el mismo camino que las propuestas del agente.
+
+Abort limpio vía web (`BLOCKED | user_abort`), repo de prueba restaurado.
+
+**🏁 Anillo 2 completo (B0–B5).** El pizarrón es de verdad compartido: humano y agentes dibujan sobre el mismo grafo, con las mismas reglas, el mismo CAS y el mismo historial. La visión de §7 — colaborar en el diseño, no aprobar prosa — está operativa de punta a punta.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -69,3 +82,4 @@ En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesan
 | B2 | 2/2 (tests/adapters/test_node_inspector.py): I1–I2; I3 = suite previa; I4 = navegador real (D-B2.3) | 133/133 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
 | B3 | 2/2 (tests/adapters/test_creation_gestures.py): H1–H2; H3 = suite previa; H4–H7 = navegador real (D-B3.5) | 135/135 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
 | B4 | 1/1 (tests/adapters/test_cas_conflicts.py): J1; J2 = suite previa; J3 = navegador real (conflicto fuera de banda) | 136/136 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
+| B5 | Misión real: mapa del researcher co-editado desde el navegador (update+create+edge), aprobado y compilado con las ediciones humanas dentro | 136/136 verde | Sin código nuevo: checkpoint de validación; CAS de aprobación K5 verificado en producción | ✅ |
