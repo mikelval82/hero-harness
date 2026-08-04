@@ -6,6 +6,18 @@ from datetime import datetime
 from mission_orchestrator.ports.artifacts import ArtifactStore
 
 
+def describe_tool_call(name: str, input: dict) -> str:
+    descriptions = {
+        "Read": f"Reading {input.get('file_path', '')}",
+        "Write": f"Writing {input.get('file_path', '')}",
+        "Edit": f"Editing {input.get('file_path', '')}",
+        "Bash": f"Running: {str(input.get('command', ''))[:60]}",
+        "Grep": f"Searching '{input.get('pattern', '')}'",
+        "Glob": f"Finding files {input.get('pattern', '')}",
+    }
+    return descriptions.get(name, f"Tool {name}")
+
+
 class FilesystemMissionLogger:
     def __init__(self, artifacts: ArtifactStore) -> None:
         self.artifacts = artifacts
@@ -19,17 +31,10 @@ class FilesystemMissionLogger:
             pass
 
     def tool_call(self, name: str, input: dict) -> None:
-        descriptions = {
-            "Read": f"Reading {input.get('file_path', '')}",
-            "Write": f"Writing {input.get('file_path', '')}",
-            "Edit": f"Editing {input.get('file_path', '')}",
-            "Bash": f"Running: {str(input.get('command', ''))[:60]}",
-            "Grep": f"Searching '{input.get('pattern', '')}'",
-            "Glob": f"Finding files {input.get('pattern', '')}",
-        }
-        self.log(descriptions.get(name, f"Tool {name}"))
+        summary = describe_tool_call(name, input)
+        self.log(summary)
         try:
-            self.artifacts.append_text("_progress.txt", descriptions.get(name, name) + "\n")
+            self.artifacts.append_text("_progress.txt", summary + "\n")
         except Exception:
             pass
 

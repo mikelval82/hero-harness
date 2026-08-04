@@ -42,6 +42,7 @@ class PhaseExecutor:
     ) -> PhaseExecution:
         config = get_phase_config(phase)
         self.services.logger.log(f"phase start: {phase.value}")
+        self.services.events.publish("phase_started", {"phase": phase.value, "mode": self.context.mode.value})
         self.services.state.update_phase(
             MissionSnapshot(
                 phase=phase.value,
@@ -77,13 +78,13 @@ class PhaseExecutor:
             else:
                 result = self.services.agent.run_phase(request)
         except PhaseTimeout as exc:
-            return PhaseExecution(exc.metrics, BlockReason(BlockKind.TIMEOUT, phase.value, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.TIMEOUT, str(exc)))
         except MaxTurnsExceeded as exc:
-            return PhaseExecution(exc.metrics, BlockReason(BlockKind.MAX_TURNS, phase.value, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.MAX_TURNS, str(exc)))
         except MaxRetriesExceeded as exc:
-            return PhaseExecution(exc.metrics, BlockReason(BlockKind.API_RETRIES, phase.value, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.API_RETRIES, str(exc)))
         except Exception as exc:
-            return PhaseExecution(None, BlockReason(BlockKind.API_RETRIES, phase.value, str(exc)))
+            return PhaseExecution(None, self._blocked(phase, BlockKind.API_RETRIES, str(exc)))
 
         self.services.logger.metric(
             {
@@ -97,9 +98,27 @@ class PhaseExecutor:
         if evaluate_gate and config.gate_artifact:
             gate = self.services.gates.evaluate(phase.value, config.gate_artifact)
             if not gate.passed:
-                return PhaseExecution(result, BlockReason(BlockKind.GATE_FAIL, phase.value, gate.detail))
+                return PhaseExecution(result, self._blocked(phase, BlockKind.GATE_FAIL, gate.detail))
         self.services.logger.log(f"phase done: {phase.value}")
+        self.services.events.publish(
+            "phase_ended",
+            {
+                "phase": phase.value,
+                "outcome": "completed",
+                "turns": result.turns,
+                "input_tokens": result.input_tokens,
+                "output_tokens": result.output_tokens,
+                "elapsed_seconds": result.elapsed_seconds or round(monotonic() - started, 3),
+            },
+        )
         return PhaseExecution(result, None)
+
+    def _blocked(self, phase: PhaseName, kind: BlockKind, detail: str) -> BlockReason:
+        self.services.events.publish(
+            "phase_ended",
+            {"phase": phase.value, "outcome": "blocked", "block_kind": kind.value, "detail": detail},
+        )
+        return BlockReason(kind, phase.value, detail)
 
     def _base_variables(self) -> dict[str, str]:
         return {

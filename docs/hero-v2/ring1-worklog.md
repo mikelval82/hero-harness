@@ -10,7 +10,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 |---|---|---|---|
 | A0 | Setup del anillo + cierre de deuda del kernel (CP-3, CP-4) | Este worklog; fallback de firma en commits del harness; derivación de locator en el compilador | ✅ hecho |
 | A1 | Puerto `EventPublisher` + tabla de eventos | Eventos tipados append-only en SQLite con correlación misión/snapshot/tarea; los puntos que hoy notifican también publican | ✅ hecho |
-| A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ⬜ |
+| A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ✅ hecho |
 | A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía SSE | ⬜ |
 | A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ⬜ |
 | A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ⬜ |
@@ -36,7 +36,17 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A1.4 · Conexión SQLite por operación.** Listeners (stdin/Telegram) y orquestador viven en hilos distintos; abrir-escribir-cerrar por evento evita conexiones compartidas entre hilos y mantiene el fichero utilizable por lectores externos (el servidor de A3 leerá el mismo `events.db`).
 
-**D-A1.5 · `AppServices` sin campo nuevo hasta A3.** Ningún servicio de aplicación consume eventos aún; añadir el campo ahora sería un puerto muerto. Se añade cuando el servidor lea `events_since`.
+**D-A1.5 · `AppServices` sin campo nuevo hasta A3.** Ningún servicio de aplicación consume eventos aún; añadir el campo ahora sería un puerto muerto. Se añade cuando el servidor lea `events_since`. _Superada en A2: `PhaseExecutor` publica directamente, el campo llegó una tarea antes de lo previsto y con consumidor real._
+
+### A2 — Emisión incremental del progreso del agente ([spec](specs/A2-agent-progress.md))
+
+**D-A2.1 · Ciclo de vida de fase como eventos propios, sin fusionar con la métrica.** `phase_started`/`phase_ended` son eventos de ciclo de vida (incluyen bloqueos con su causa); la métrica `phase` de tokens/duración sigue existíendo tal cual. Fusionarlos habría roto el contrato de `_metrics.jsonl` que K10 fijó.
+
+**D-A2.2 · `phase_ended` se emite en todas las salidas.** El helper `_blocked` del executor garantiza que timeout, max_turns, api_retries y gate_fail publican el cierre de fase con `block_kind` antes de devolver el bloqueo: la UI nunca verá una fase abierta para siempre.
+
+**D-A2.3 · Un solo texto para log y evento.** `describe_tool_call` sale del logger de fichero como función de módulo y la comparten logger y puente: el resumen que se lee en `mission.log` es idéntico al del evento `tool_call`.
+
+**D-A2.4 · Default nulo en `AppServices.events`.** `NullEventPublisher` (patrón `NoopCodeGraphService`) mantiene todas las fixtures existentes sin cambios; solo la composición real inyecta el almacén SQLite.
 
 ## 3. Auditoría
 
@@ -44,3 +54,4 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 |---|---|---|---|---|
 | A0 | 3/3 CP-4 (tests/domain/test_changeset.py C9–C11) + 2/2 CP-3 (tests/adapters/test_git_service.py) | 91/91 verde | Sin spec formal: tarea de deuda, decisiones D-A0.1/D-A0.2 documentadas aquí | ✅ |
 | A1 | 8/8 (tests/adapters/test_event_log.py): E1–E7 de la spec; E8 = suite previa | 99/99 verde | `AppServices` sin campo `events` hasta A3 (D-A1.5), declarado en spec §2.5 | ✅ |
+| A2 | 6/6 (tests/application/test_agent_progress.py): P1–P5; P6 = suite previa | 105/105 verde | D-A1.5 superada (campo `events` añadido en A2 con consumidor real); test E6 de A1 actualizado al nuevo contrato de `tool_call` | ✅ |

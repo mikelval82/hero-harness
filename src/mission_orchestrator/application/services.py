@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from mission_orchestrator.ports.agent_client import AgentClient
 from mission_orchestrator.ports.artifacts import ArtifactStore
 from mission_orchestrator.ports.code_graph import CodeGraphService
 from mission_orchestrator.ports.command_bus import CommandBus
+from mission_orchestrator.ports.events import EventPublisher, NullEventPublisher
 from mission_orchestrator.ports.gate_evaluator import GateEvaluator
 from mission_orchestrator.ports.git_service import GitService
 from mission_orchestrator.ports.logger import MissionLogger
@@ -30,4 +31,5 @@ class AppServices:
     git: GitService
     code_graph: CodeGraphService
     logger: MissionLogger
+    events: EventPublisher = field(default_factory=NullEventPublisher)
 

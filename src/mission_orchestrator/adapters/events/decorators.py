@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from mission_orchestrator.adapters.filesystem.logger import describe_tool_call
 from mission_orchestrator.domain.result import MissionResult
 from mission_orchestrator.ports.events import EventPublisher
 from mission_orchestrator.ports.logger import MissionLogger
@@ -45,6 +46,7 @@ class PublishingLogger:
         self.inner.log(message)
 
     def tool_call(self, name: str, input: dict) -> None:
+        _safe_publish(self.events, "tool_call", {"tool": name, "summary": describe_tool_call(name, input)})
         self.inner.tool_call(name, input)
 
     def metric(self, record: dict) -> None:

@@ -135,7 +135,8 @@ class PublishingDecoratorsTest(unittest.TestCase):
         logger.tool_call("Read", {"file_path": "x"})
 
         events = self.events.events_since(0)
-        self.assertEqual([e.kind for e in events], ["review_verdict", "phase", "metric"])
+        # tool_call publishes since A2; log remains delegation-only.
+        self.assertEqual([e.kind for e in events], ["review_verdict", "phase", "metric", "tool_call"])
         self.assertEqual(events[0].task_id, "task-1")
         self.assertEqual(
             [call[0] for call in self.inner.calls],

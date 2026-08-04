@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         git=git,
         code_graph=SQLiteCodeGraphService(workspace.harness_dir),
         logger=logger,
+        events=events,
     )
     context = MissionContext(
         task=task,
