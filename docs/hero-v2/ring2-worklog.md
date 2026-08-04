@@ -14,7 +14,7 @@ Decisión de alcance (2026-08-04): Mermaid descartado como motor del lienzo (com
 | B1 | `POST /api/design/propose` | Operaciones de diseño humanas por el mismo CAS que los agentes, con evento publicado | ✅ hecho |
 | B2 | Inspector de nodos en la UI | Click → panel de campos; editar label/intent/descripción/locator vía B1 | ✅ hecho |
 | B3 | Gestos de creación | Crear nodo (doble click en carril), dibujar edge (arrastre nodo→nodo), marcar REMOVE | ✅ hecho |
-| B4 | Conflictos CAS en la UI | Revisión movida durante la edición → refetch + aviso, nunca sobrescritura silenciosa | ⬜ |
+| B4 | Conflictos CAS en la UI | Revisión movida durante la edición → refetch + aviso, nunca sobrescritura silenciosa | ✅ hecho |
 | B5 | Checkpoint: mapa dibujado a mano | Ajustar el mapa en el navegador, aprobar y compilar changeset de él | ⬜ |
 
 En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesanal, se adopta una librería de grafos madura (Cytoscape.js) como dependencia opcional del adaptador web.
@@ -53,6 +53,14 @@ En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesan
 
 **Validación en navegador (H4–H6):** doble click en CODE → `metrics-reporter` creado con auto-slug, `HUMAN`, renderizado en su carril (rev 1→2); shift+arrastre cache→metrics-reporter → edge `reports` (rev 2→3); borrado de edge y nodo con confirmación doble (rev 3→5, cascada del store verificada). Historial completo `human-…` en la UI.
 
+### B4 — Conflictos CAS en la UI ([spec](specs/B4-cas-conflicts.md))
+
+**D-B4.1 · El conflicto recarga, el humano reintenta.** En `CONFLICT` la UI hace refresh automático (el humano ve la verdad que ganó) pero **nunca** reintenta la operación sola: los valores tecleados persisten y el segundo Save es una decisión deliberada contra la revisión nueva. Reintentar automáticamente habría convertido el CAS en un last-writer-wins disfrazado.
+
+**D-B4.2 · Re-vinculación en cada refresh.** `rebindInspector` apunta el inspector a la instancia fresca del nodo tras cualquier refresh (conflicto o long-poll de fondo): el diff de campos de D-B2.1 se calcula siempre contra la verdad actual. Si el objetivo desapareció, el Save queda inerte y se avisa.
+
+**Validación en navegador (J3):** con el inspector abierto y label editado, una escritura fuera de banda movió la revisión 1→2; Save → `CONFLICT: map reloaded at revision 2`, valores intactos, nodo intruso visible en el lienzo; segundo Save → APPLIED (rev 3). El historial del store registra la secuencia íntegra: `#3 CONFLICT (base 1)` → `#4 APPLIED (base 2)`.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -60,3 +68,4 @@ En B3 se evalúa la condición de D-A5.1: si los gestos desbordan el SVG artesan
 | B1 | 9/9 (tests/adapters/test_design_propose.py): G1–G7 + G1b; G8 = suite previa | 131/131 verde | Ninguna: diff limitado a server.py, spec, tests y worklog | ✅ |
 | B2 | 2/2 (tests/adapters/test_node_inspector.py): I1–I2; I3 = suite previa; I4 = navegador real (D-B2.3) | 133/133 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
 | B3 | 2/2 (tests/adapters/test_creation_gestures.py): H1–H2; H3 = suite previa; H4–H7 = navegador real (D-B3.5) | 135/135 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |
+| B4 | 1/1 (tests/adapters/test_cas_conflicts.py): J1; J2 = suite previa; J3 = navegador real (conflicto fuera de banda) | 136/136 verde | Ninguna: diff limitado a index.html, spec, tests y worklog | ✅ |

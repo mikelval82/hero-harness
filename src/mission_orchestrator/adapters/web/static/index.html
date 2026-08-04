@@ -233,6 +233,7 @@
       state.designRevision = map.design_revision;
       state.nodes = Object.fromEntries(map.nodes.map(n => [n.id, n]));
       state.edges = map.edges;
+      rebindInspector();
       document.getElementById("mission-meta").textContent = `design revision ${map.design_revision}`;
       document.getElementById("snapshot-meta").textContent =
         snapshot ? `approved snapshot ${snapshot.snapshot_id}` : "no approved snapshot yet";
@@ -352,6 +353,18 @@
     if (description !== (node.description || "")) fields.description = description;
     return fields;
   }
+  // Field diffs must compare against the current truth, not the node loaded at open time.
+  function rebindInspector() {
+    if (inspector.mode !== "node" || !inspector.node) return;
+    const fresh = state.nodes[inspector.node.id];
+    if (fresh) {
+      inspector.node = fresh;
+    } else {
+      const status = inspField("insp-status");
+      status.textContent = `${inspector.node.id} no longer exists`;
+      status.className = "bad";
+    }
+  }
   async function propose(operations) {
     const response = await fetch("/api/design/propose", {
       method: "POST",
@@ -359,9 +372,22 @@
       body: JSON.stringify({ base_revision: state.designRevision, operations }),
     }).then(r => r.json());
     const status = inspField("insp-status");
-    status.textContent = response.status + (response.detail ? ": " + response.detail : "");
-    status.className = response.status === "APPLIED" ? "ok" : "bad";
-    if (response.status === "APPLIED") await refresh();
+    if (response.status === "APPLIED") {
+      status.textContent = "APPLIED";
+      status.className = "ok";
+      await refresh();
+    } else if (response.status === "CONFLICT") {
+      await refresh(); // show the truth that won; typed values stay untouched
+      if (inspector.mode === "node" && inspector.node && !state.nodes[inspector.node.id]) {
+        status.textContent = `CONFLICT: ${inspector.node.id} no longer exists`;
+      } else {
+        status.textContent = `CONFLICT: map reloaded at revision ${state.designRevision} — review and Save to retry`;
+      }
+      status.className = "bad";
+    } else {
+      status.textContent = response.status + (response.detail ? ": " + response.detail : "");
+      status.className = "bad";
+    }
     return response;
   }
   document.getElementById("insp-close").onclick = () => {
@@ -370,6 +396,7 @@
   };
   document.getElementById("insp-save").onclick = async () => {
     if (inspector.mode === "node") {
+      if (!state.nodes[inspector.node?.id]) return; // target vanished: save is inert
       const fields = changedFields(inspector.node);
       if (!Object.keys(fields).length) { document.getElementById("insp-close").click(); return; }
       const response = await propose([{ op: "update_node", id: inspector.node.id, ...fields }]);
