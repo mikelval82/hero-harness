@@ -251,6 +251,20 @@ Spec: [specs/K10-diff-telemetry.md](specs/K10-diff-telemetry.md). Tests D1–D6 
 
 **🏁 Kernel completo (K0–K10).** Los tres circuitos de la visión cierran: el epistémico (hechos vs diseño, K1–K2), el humano (dibujar → ver diff → aprobar → compilar → agrupar, K4–K7 + K10) y el de realidad (ejecutar con dependencias → reconciliar → gate de merge → medir, K8–K10). Suite final: 86/86. Checkpoint de hito real superado tras K7 con un fix de agent loop (CP-1) como único hallazgo.
 
+### Checkpoint 2 — misión real de ejecución completa (2026-08-04, ✅ aprobado)
+
+Misión `focused` sobre COPILOT_LEARNING (`feature/case-index-v2`): el bucle entero en producción, de dibujo a gate de merge, en ~13 min. Resultado COMPLETE 1/1, review APPROVED al primer intento.
+
+1. **K10 diff** — El humano vio exactamente qué aprobaba antes de decidir: `+ CREATE tools/case_index.py [CODE] — …`, 2 edges nuevos, `= KEEP: 6`.
+2. **K5/K6** — Snapshot `221135637638` (design_revision 2); changeset compilado **sin issues** (mejor modelado que en el checkpoint 1: nada fuera del alcance del analyzer).
+3. **Ejecución real** — spec → plan → implement (escribió `tools/case_index.py`, lo ejecutó, corrió `verify.sh`) → review con verificación activa (re-ejecutó el script, `py_compile`, diff) → APPROVED.
+4. **K9** — `reconciliation.json` contra revisión observada 2: 3 checks `unverifiable` (2 relaciones por construcción + 1 CREATE sin locator), 0 divergencias → **gate open** → intento de merge. Semántica D-9.1/D-9.3 correcta en producción.
+5. **K10 telemetría** — `_metrics.jsonl` con los eventos exactos: `approval` (snapshot + revisiones), `review_verdict` (APPROVED, attempt 1, sin retrabajo), `reconciliation` (counts + gate open).
+
+**Hallazgo CP-3 · El commit final choca con `commit.gpgsign`.** El repo de prueba firma commits y el entorno headless no tiene clave secreta: `final_commit` falló y el orquestador degradó con gracia (notificación "Merge failed", misión COMPLETE, working tree intacto con los cambios staged). Correcto como comportamiento; queda como decisión de backlog si el harness debe commitear con `-c commit.gpgsign=false` (alteraría la política del repo del usuario) o exigir entorno con clave.
+
+**Hallazgo CP-4 · CREATE sin locator = resultado no verificable.** El researcher no puso `locator` al nodo CREATE, así que la operación quedó `unverifiable` en vez de `materialized` pese a que `tools/case_index.py` existe y está observado. Mitigación mínima aplicada: la descripción del schema de `GraphPropose` ahora pide locator esperado para CREATE. Si los agentes siguen omitiéndolo, el compilador K6 podría derivar el locator del label cuando parezca una ruta (backlog).
+
 ---
 
 ## 3. Auditoría por tarea
@@ -271,6 +285,4 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K8 | 6/6 (tests/application/test_scheduling.py): D1–D5; D6 = suite previa | 70/70 verde | `summarize_tasks` cambia formato de línea de recuento (añade `Blocked:`); test de contrato de dominio actualizado | ✅ |
 | K9 | 9/9 (tests/application/test_reconciliation.py): D1–D7; D8 = suite previa | 79/79 verde | Aceptación interactiva de discrepancias no críticas pospuesta (v1 registra sin bloquear), declarado en spec §1 | ✅ |
 | K10 | 7/7 (tests/application/test_diff_and_telemetry.py): D1–D6; D7 = suite previa | 86/86 verde | `Reconciler.gate_reasons` renombrado a `evaluate` con tupla (D-10.3) | ✅ |
-| K8 | — | — | — | — |
-| K9 | — | — | — | — |
-| K10 | — | — | — | — |
+| CP2 | Misión real completa sobre COPILOT_LEARNING (focused, 1/1 COMPLETE, review APPROVED intento 1) | 86/86 verde | Hallazgos CP-3 (gpgsign en entorno, degradación correcta) y CP-4 (locator ausente en CREATE → mitigado en schema de GraphPropose) | ✅ |
