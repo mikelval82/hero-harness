@@ -11,7 +11,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 | A0 | Setup del anillo + cierre de deuda del kernel (CP-3, CP-4) | Este worklog; fallback de firma en commits del harness; derivación de locator en el compilador | ✅ hecho |
 | A1 | Puerto `EventPublisher` + tabla de eventos | Eventos tipados append-only en SQLite con correlación misión/snapshot/tarea; los puntos que hoy notifican también publican | ✅ hecho |
 | A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ✅ hecho |
-| A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía SSE | ⬜ |
+| A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía long-poll | ✅ hecho |
 | A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ⬜ |
 | A5 | UI de lectura | Grafo SVG (niveles e intents), zoom/pan, panel de diff con aprobar/rechazar, historial, feed de eventos | ⬜ |
 | A6 | Checkpoint: misión real aprobada desde la UI | Validación de punta a punta en navegador | ⬜ |
@@ -48,6 +48,16 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A2.4 · Default nulo en `AppServices.events`.** `NullEventPublisher` (patrón `NoopCodeGraphService`) mantiene todas las fixtures existentes sin cambios; solo la composición real inyecta el almacén SQLite.
 
+### A3 — Servidor HTTP local de lectura ([spec](specs/A3-web-server.md))
+
+**D-A3.1 · Long-poll en vez de SSE.** §10 sanciona explícitamente el long polling para el MVP; con stdlib es trivial, testeable y sin conexiones persistentes que gestionar. `GET /api/events?after=N&wait=S` bloquea hasta 30 s. SSE/WebSocket solo con necesidad demostrada.
+
+**D-A3.2 · El servidor compone adaptadores, el navegador ve contratos.** `MissionWebServer` reutiliza `DesignStore`, `SqliteEventLog` y `render_map_diff` — el mismo texto de diff que ve stdin/Telegram —; la UI nunca toca SQLite. Adaptadores frescos por petición: cada worker thread de `ThreadingHTTPServer` abre su propia conexión (coherente con D-A1.4).
+
+**D-A3.3 · Seguridad mínima completa de §10.** Bind exclusivo a `127.0.0.1`, token `secrets.token_urlsafe` por sesión (header Bearer o query), y rechazo de `Origin` con host ajeno (bloquea que una web remota use el navegador del usuario como proxy hacia el servidor local). Sin endpoints que reciban rutas de filesystem: la política de rutas de §10 no aplica todavía.
+
+**D-A3.4 · `--web` opcional, headless intacto.** El servidor solo arranca con el flag; corre como hilo daemon y no impide la salida del proceso. Sin `--web`, la misión es byte a byte la de antes.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
@@ -55,3 +65,4 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 | A0 | 3/3 CP-4 (tests/domain/test_changeset.py C9–C11) + 2/2 CP-3 (tests/adapters/test_git_service.py) | 91/91 verde | Sin spec formal: tarea de deuda, decisiones D-A0.1/D-A0.2 documentadas aquí | ✅ |
 | A1 | 8/8 (tests/adapters/test_event_log.py): E1–E7 de la spec; E8 = suite previa | 99/99 verde | `AppServices` sin campo `events` hasta A3 (D-A1.5), declarado en spec §2.5 | ✅ |
 | A2 | 6/6 (tests/application/test_agent_progress.py): P1–P5; P6 = suite previa | 105/105 verde | D-A1.5 superada (campo `events` añadido en A2 con consumidor real); test E6 de A1 actualizado al nuevo contrato de `tool_call` | ✅ |
+| A3 | 8/8 (tests/adapters/test_web_server.py): W1–W7; W8 = suite previa | 113/113 verde | SSE del backlog sustituido por long-poll (D-A3.1, sancionado por §10) | ✅ |

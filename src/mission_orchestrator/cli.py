@@ -23,6 +23,7 @@ from mission_orchestrator.adapters.stdin.listener import StdinListener
 from mission_orchestrator.adapters.telegram.listener import TelegramListener
 from mission_orchestrator.adapters.telegram.notifier import TelegramNotifier
 from mission_orchestrator.adapters.tools.registry import default_tool_registry
+from mission_orchestrator.adapters.web.server import MissionWebServer
 from mission_orchestrator.application.gate_evaluator import MarkdownGateEvaluator
 from mission_orchestrator.application.orchestrator import MissionOrchestrator
 from mission_orchestrator.application.services import AppServices
@@ -118,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
             registry=registry,
         ).start()
     StdinListener(commands).start_if_tty()
+    if args.web:
+        web = MissionWebServer(workspace.harness_dir, workspace.mission_tag, port=args.web_port)
+        logger.log(f"web server: {web.start()}")
     result = MissionOrchestrator(services, context).run()
     return 0 if result.block is None else 2
 
@@ -134,6 +138,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-file")
     parser.add_argument("--branch", dest="branch_opt")
     parser.add_argument("--max-tasks", type=int, default=20)
+    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--web-port", type=int, default=8765)
     return parser.parse_args(argv)
 
 
