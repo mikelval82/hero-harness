@@ -58,7 +58,7 @@ flowchart LR
 | K5 | Aprobación CAS sobre revisión de diseño + Approved Snapshot inmutable + espera tipada por stdin/Telegram | ligera | ✅ hecho | `K5` |
 | K6 | Compilador `ChangeSet` (función pura: snapshot + observación de partida → operaciones) | **completa** | ✅ hecho | `K6` |
 | K7 | Structurer agrupa a WorkPlan + validador determinista de cobertura y ciclos + desactivar consolidación LLM para planes compilados | **completa** | ✅ hecho | `K7` |
-| K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | pendiente | — |
+| K8 | `Task.dependencies` + `target_nodes` + estado `blocked` + scheduling en `TaskExecutor` | ligera | ✅ hecho | `K8` |
 | K9 | Reconciliación tras tarea aceptada + categorías de deriva + gate de merge | **completa** | pendiente | — |
 | K10 | Render textual del diff + telemetría mínima (veredicto inicial, retrabajo, cobertura, deriva) | ligera | pendiente | — |
 
@@ -211,9 +211,17 @@ Misión de prueba sobre repo externo `COPILOT_LEARNING` (modo plan, `--no-grill`
 
 **Observación CP-2 (para K9/backlog):** los nodos de diseño sobre artefactos no-Python (`.md`, configs) siempre caerán como issue "not observed" porque el analyzer de hechos solo indexa Python. Aceptable hoy (issue informativo), pero la reconciliación de K9 deberá distinguir "no observado por fuera de alcance del analyzer" de "no observado porque no existe".
 
-### K8 — Scheduling con dependencias
+### K8 — Scheduling con dependencias (2026-08-04)
 
-_(pendiente)_
+Spec: [specs/K8-scheduling.md](specs/K8-scheduling.md). Tests D1–D5 escritos antes que la implementación; D6 cubierta por la suite previa del orquestador, verde sin cambios de comportamiento.
+
+**D-8.1 · `blocked` es un estado terminal distinto de `failed`.** `failed` = se intentó y no salió; `blocked` = no se intentó porque el prerequisito falló. Ejecutar una tarea cuyo cimiento no existe produce basura con apariencia de progreso; distinguirlos hace el reporte honesto y da a K9 la semántica que necesita para reconciliar.
+
+**D-8.2 · Scheduler puro en dominio, bucle tonto en aplicación.** `next_runnable_index` y `dependency_block_reason` son funciones puras sobre `list[Task]` (testeables sin ejecutor); el `TaskExecutor` solo pregunta "¿cuál toca?" en un `while` que termina cuando no hay ejecutables. La selección es determinista: primera pendiente en orden de lista con deps completadas, así el `tasks.json` legado sin dependencias ejecuta en el orden exacto de siempre (D6).
+
+**D-8.3 · Bloqueo transitivo y sin bucles infinitos.** Cuando no queda nada ejecutable, toda pendiente recibe `blocked` con la razón del prerequisito (`dependency failed/blocked: <id>`); si no hay prerequisito culpable (ciclo en un tasks.json editado a mano — el validador de K7 lo impide en planes compilados), cae como `unresolvable dependencies`. La misión siempre llega a reporte.
+
+**D-8.4 · Estado en memoria sincronizado con el repo.** El ejecutor persiste vía `tasks.update(index, ...)` y refleja el mismo cambio en la lista en memoria (`_mark`), porque el scheduler decide sobre esa lista. El único caso que ya persistía fuera (ReviewCoordinator marca COMPLETED tras commit) se refleja en memoria tras retornar.
 
 ### K9 — Reconciliación y gate de merge
 
@@ -239,6 +247,8 @@ Se rellena al cierre. Una fila por tarea: qué prometía la spec, qué verifica 
 | K5 | 6/6 (tests/application/test_approval.py) | 46/46 verde | Ninguna: diff limitado a store.py (aditivo), domain/design.py, application/approval.py, spec, tests y worklog | ✅ |
 | K6 | 8/8 (tests/domain/test_changeset.py): C1–C8 de la spec | 54/54 verde | Ninguna: diff limitado a domain/changeset.py, spec, tests y worklog | ✅ |
 | K7 | 8/8 (tests/application/test_plan_pipeline.py): D1–D8; D9 = suite previa intacta | 62/62 verde | `project_scope_dir` añadido a MissionContext como opcional para no romper fixtures (D-7.5) | ✅ |
+| CP | 2/2 (tests/adapters/test_agent_client.py) + misión real sobre COPILOT_LEARNING | 64/64 verde | Fix CP-1 en agent loop (fuera del alcance K1–K7, aceptado por bug real); misión cortada en fase plan para ahorrar tokens | ✅ |
+| K8 | 6/6 (tests/application/test_scheduling.py): D1–D5; D6 = suite previa | 70/70 verde | `summarize_tasks` cambia formato de línea de recuento (añade `Blocked:`); test de contrato de dominio actualizado | ✅ |
 | K8 | — | — | — | — |
 | K9 | — | — | — | — |
 | K10 | — | — | — | — |

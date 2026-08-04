@@ -1,6 +1,29 @@
 from __future__ import annotations
 
-from mission_orchestrator.domain.task import Task
+from mission_orchestrator.domain.task import Task, TaskStatus
+
+
+def next_runnable_index(tasks: list[Task]) -> int | None:
+    by_id = {task.id: task for task in tasks}
+    for index, task in enumerate(tasks):
+        if task.status is not TaskStatus.PENDING:
+            continue
+        deps = [by_id[dep] for dep in task.dependencies if dep in by_id]
+        if all(dep.status is TaskStatus.COMPLETED for dep in deps):
+            return index
+    return None
+
+
+def dependency_block_reason(task: Task, tasks_by_id: dict[str, Task]) -> str | None:
+    for dep_id in task.dependencies:
+        dep = tasks_by_id.get(dep_id)
+        if dep is None:
+            continue
+        if dep.status is TaskStatus.FAILED:
+            return f"dependency failed: {dep_id}"
+        if dep.status is TaskStatus.BLOCKED:
+            return f"dependency blocked: {dep_id}"
+    return None
 
 
 def validate_plan(operation_ids: list[str], tasks: list[Task]) -> list[str]:

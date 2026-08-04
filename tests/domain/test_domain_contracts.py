@@ -50,7 +50,7 @@ class DomainContractsTest(unittest.TestCase):
         ]
         self.assertEqual(
             summarize_tasks(tasks),
-            "Total: 3 | Completed: 1 | Failed: 1 | Pending: 1\nFAILED [T-2]: nope",
+            "Total: 3 | Completed: 1 | Failed: 1 | Blocked: 0 | Pending: 1\nFAILED [T-2]: nope",
         )
 
 

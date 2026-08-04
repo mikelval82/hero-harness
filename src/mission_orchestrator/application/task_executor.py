@@ -10,6 +10,7 @@ from mission_orchestrator.domain.block import BlockReason
 from mission_orchestrator.domain.mission import MissionContext, MissionMode, MissionSnapshot
 from mission_orchestrator.domain.phase import PhaseName
 from mission_orchestrator.domain.task import Task, TaskStatus
+from mission_orchestrator.domain.workplan import dependency_block_reason, next_runnable_index
 
 
 STALE_TASK_ARTIFACTS = (
@@ -41,15 +42,17 @@ class TaskExecutor:
         self.block: BlockReason | None = None
 
     def run(self, tasks: list[Task]) -> int:
-        completed = 0
+        completed = sum(1 for task in tasks if task.status == TaskStatus.COMPLETED)
         total = len(tasks)
-        for index, task in enumerate(tasks):
+        while True:
             if not self.signal_controller.check_signals():
                 self.block = self.signal_controller.block
                 break
-            if task.status == TaskStatus.COMPLETED:
-                completed += 1
-                continue
+            index = next_runnable_index(tasks)
+            if index is None:
+                self._block_unrunnable(tasks)
+                break
+            task = tasks[index]
             self._clear_stale_task_artifacts()
             self.services.code_graph.build(self.context.project_dir)
             self.services.state.update_phase(
@@ -69,10 +72,10 @@ class TaskExecutor:
                 if block.is_mission_abort:
                     self.block = block
                     break
-                self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                self._mark(tasks, index, TaskStatus.FAILED, str(block))
                 continue
             if self.context.mode == MissionMode.PLAN:
-                self.services.tasks.update(index, TaskStatus.COMPLETED)
+                self._mark(tasks, index, TaskStatus.COMPLETED)
                 self.compactor.compact(task.id)
                 completed += 1
                 continue
@@ -86,10 +89,24 @@ class TaskExecutor:
                 if block.is_mission_abort:
                     self.block = block
                     break
-                self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                self._mark(tasks, index, TaskStatus.FAILED, str(block))
                 continue
+            task.status = TaskStatus.COMPLETED
             completed += 1
         return completed
+
+    def _mark(self, tasks: list[Task], index: int, status: TaskStatus, reason: str = "") -> None:
+        self.services.tasks.update(index, status, reason)
+        tasks[index].status = status
+        tasks[index].failure_reason = reason
+
+    def _block_unrunnable(self, tasks: list[Task]) -> None:
+        by_id = {task.id: task for task in tasks}
+        for index, task in enumerate(tasks):
+            if task.status != TaskStatus.PENDING:
+                continue
+            reason = dependency_block_reason(task, by_id) or "unresolvable dependencies"
+            self._mark(tasks, index, TaskStatus.BLOCKED, reason)
 
     def _run_task_pipeline(self, task: Task) -> BlockReason | None:
         pipeline = task_pipeline_for(task, self.context.mode)

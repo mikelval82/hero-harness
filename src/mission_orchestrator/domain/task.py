@@ -22,6 +22,7 @@ class TaskStatus(Enum):
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+    BLOCKED = "blocked"
 
     @classmethod
     def parse(cls, value: object) -> "TaskStatus":
@@ -75,11 +76,15 @@ def summarize_tasks(tasks: list[Task]) -> str:
     total = len(tasks)
     completed = sum(1 for task in tasks if task.status == TaskStatus.COMPLETED)
     failed = sum(1 for task in tasks if task.status == TaskStatus.FAILED)
-    pending = total - completed - failed
-    lines = [f"Total: {total} | Completed: {completed} | Failed: {failed} | Pending: {pending}"]
+    blocked = sum(1 for task in tasks if task.status == TaskStatus.BLOCKED)
+    pending = total - completed - failed - blocked
+    lines = [
+        f"Total: {total} | Completed: {completed} | Failed: {failed} | Blocked: {blocked} | Pending: {pending}"
+    ]
     for task in tasks:
         if task.status == TaskStatus.FAILED:
-            reason = task.failure_reason or "unknown"
-            lines.append(f"FAILED [{task.id}]: {reason}")
+            lines.append(f"FAILED [{task.id}]: {task.failure_reason or 'unknown'}")
+        elif task.status == TaskStatus.BLOCKED:
+            lines.append(f"BLOCKED [{task.id}]: {task.failure_reason or 'unknown'}")
     return "\n".join(lines)
 
