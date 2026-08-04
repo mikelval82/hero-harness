@@ -9,6 +9,8 @@ from pathlib import Path
 from mission_orchestrator.adapters.analysis.service import SQLiteCodeGraphService
 from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
 from mission_orchestrator.adapters.command_bus import QueueCommandBus
+from mission_orchestrator.adapters.events.decorators import PublishingLogger, PublishingNotifier
+from mission_orchestrator.adapters.events.sqlite_log import SqliteEventLog
 from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemArtifactStore
 from mission_orchestrator.adapters.filesystem.logger import FilesystemMissionLogger
 from mission_orchestrator.adapters.filesystem.mission_registry import MissionRegistry
@@ -45,16 +47,20 @@ def main(argv: list[str] | None = None) -> int:
         gate_mode=gate_mode,
     )
     artifacts = FilesystemArtifactStore(workspace.harness_dir)
-    logger = FilesystemMissionLogger(artifacts)
+    events = SqliteEventLog(workspace.harness_dir, mission=workspace.mission_tag)
+    logger = PublishingLogger(FilesystemMissionLogger(artifacts), events)
     tasks = JsonTaskRepository(artifacts)
     state = FilesystemMissionStateStore(artifacts, gate_mode)
     commands = QueueCommandBus()
     registry = MissionRegistry()
     registry.register(workspace.mission_tag, workspace.harness_dir)
-    notifier = TelegramNotifier(
-        os.environ.get("TELEGRAM_TOKEN"),
-        os.environ.get("TELEGRAM_CHAT_ID"),
-        prefix=f"[{workspace.project_name}]",
+    notifier = PublishingNotifier(
+        TelegramNotifier(
+            os.environ.get("TELEGRAM_TOKEN"),
+            os.environ.get("TELEGRAM_CHAT_ID"),
+            prefix=f"[{workspace.project_name}]",
+        ),
+        events,
     )
     git = SubprocessGitService(project_dir)
     git.ensure_develop()

@@ -9,7 +9,7 @@ Decisión de alcance (2026-08-04): la evaluación emparejada con/sin grafo (§14
 | Tarea | Título | Alcance | Estado |
 |---|---|---|---|
 | A0 | Setup del anillo + cierre de deuda del kernel (CP-3, CP-4) | Este worklog; fallback de firma en commits del harness; derivación de locator en el compilador | ✅ hecho |
-| A1 | Puerto `EventPublisher` + tabla de eventos | Eventos tipados append-only en SQLite con correlación misión/snapshot/tarea; los puntos que hoy notifican también publican | ⬜ |
+| A1 | Puerto `EventPublisher` + tabla de eventos | Eventos tipados append-only en SQLite con correlación misión/snapshot/tarea; los puntos que hoy notifican también publican | ✅ hecho |
 | A2 | Emisión incremental del puerto del agente | Progreso de tools y fases como eventos en streaming | ⬜ |
 | A3 | Servidor HTTP local de lectura | `127.0.0.1` + token por sesión + validación de origen; contratos públicos: mapa, diff pendiente, snapshot, historial, eventos vía SSE | ⬜ |
 | A4 | Comandos por HTTP | `/approve`, `/reject`, `/abort` por el mismo gate de interacciones tipadas que stdin/Telegram | ⬜ |
@@ -26,8 +26,21 @@ Restricciones heredadas de la visión: la UI consume contratos públicos del nú
 
 **D-A0.2 · CP-4: el compilador deriva el locator de CREATEs, no lo inventa.** Si un nodo CREATE llega sin `locator` pero su `label` parece una ruta de repositorio (contiene `/`, sin espacios, con extensión y miembro opcional `:Nombre`), el compilador usa el label como locator esperado. Solo aplica a CREATE: en CHANGE/REMOVE la ausencia de locator sigue siendo un issue, porque derivarlo enmascararía anclas rotas sobre código que debe existir. Con locator derivado, la reconciliación de K9 puede verificar la materialización (evita el `unverifiable` del hallazgo CP-4).
 
+### A1 — Puerto `EventPublisher` + tabla de eventos ([spec](specs/A1-events.md))
+
+**D-A1.1 · Puentes decoradores en vez de tocar call-sites.** `PublishingNotifier` y `PublishingLogger` envuelven los puertos existentes en la raíz de composición: toda notificación humana y toda métrica estructurada se convierte en evento sin modificar un solo punto de emisión. Cuando A2 añada emisión incremental explícita, los puntos nuevos publicarán directo al puerto; los puentes son la cobertura retroactiva, no el patrón final.
+
+**D-A1.2 · El almacén asigna los ids, el emisor no correlaciona.** `event_id` es autoincremental de SQLite (monótono por misión) y la correlación `task_id`/`snapshot_id` se extrae del payload cuando existe. Los emisores no cambian su contrato: siguen publicando dicts planos, exactamente los que ya escribían en `_metrics.jsonl`.
+
+**D-A1.3 · `publish` nunca mata la misión.** Mismo contrato de resiliencia que el logger de fichero: errores del almacén de eventos (disco, serialización) se tragan; además los puentes protegen con su propio try/except para publishers arbitrarios. Un fallo de telemetría no puede costar una misión con horas de trabajo.
+
+**D-A1.4 · Conexión SQLite por operación.** Listeners (stdin/Telegram) y orquestador viven en hilos distintos; abrir-escribir-cerrar por evento evita conexiones compartidas entre hilos y mantiene el fichero utilizable por lectores externos (el servidor de A3 leerá el mismo `events.db`).
+
+**D-A1.5 · `AppServices` sin campo nuevo hasta A3.** Ningún servicio de aplicación consume eventos aún; añadir el campo ahora sería un puerto muerto. Se añade cuando el servidor lea `events_since`.
+
 ## 3. Auditoría
 
 | Tarea | Tests de aceptación | Suite | Desviaciones de spec | Veredicto |
 |---|---|---|---|---|
 | A0 | 3/3 CP-4 (tests/domain/test_changeset.py C9–C11) + 2/2 CP-3 (tests/adapters/test_git_service.py) | 91/91 verde | Sin spec formal: tarea de deuda, decisiones D-A0.1/D-A0.2 documentadas aquí | ✅ |
+| A1 | 8/8 (tests/adapters/test_event_log.py): E1–E7 de la spec; E8 = suite previa | 99/99 verde | `AppServices` sin campo `events` hasta A3 (D-A1.5), declarado en spec §2.5 | ✅ |
