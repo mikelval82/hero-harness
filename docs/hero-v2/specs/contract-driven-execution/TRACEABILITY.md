@@ -12,7 +12,7 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | CDE-004 | D005-D007, D011 | `0a4aa0b`: lossless operations, derived locators and relationship levels | CDE-A05 | N/A | Verified |
 | CDE-005 | D003, D007, D014 | `0a4aa0b`: immutable snapshot-scoped slices and active alias | CDE-A06 plus Mission pipeline assertion | WorkPlan UI pending | Verified |
 | CDE-006 | D005, D012, D014 | `0a4aa0b`: one alias included by all six contractual phases | CDE-A07 plus prompt obligations | N/A | Verified |
-| CDE-007 | D005-D007, D011, D015 | Increment 3: AST declaration/signature/docstring/relationship verifier; classic and interactive completion gate | CDE-A08, CDE-A09 plus required-unverifiable merge gate | Materialization UI pending | Verified |
+| CDE-007 | D005-D007, D011, D015 | `7fc61c1`: AST declaration/signature/docstring/relationship verifier; classic and interactive completion gate | CDE-A08, CDE-A09 plus required-unverifiable merge gate | Materialization UI pending | Verified |
 | CDE-008 | D008, D012 | Pending | CDE-A10 | Ownership UI pending | Specified |
 | CDE-009 | D003, D009, D012 | Pending | Protocol tests | CDE-A11 | Specified |
 | CDE-010 | D008, D010, D012 | Pending | Authorization/tool tests | CDE-A12, CDE-A13 | Specified |
@@ -36,6 +36,7 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | 2026-08-15 | `4e58a33` | SDD package | Requirements and decisions reviewed from design baseline | Specified |
 | 2026-08-15 | `8f92595` | Contract schema, brief boundary and composite approval | 162 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend; rendered UI pending |
 | 2026-08-15 | `0a4aa0b` | Lossless ChangeSet and immutable task contract slices | 168 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend and Mission pipeline; rendered UI pending |
+| 2026-08-15 | `7fc61c1` | Python AST verification and Mission completion enforcement | 174 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend in classic and interactive coordinators; materialization UI pending |
 
 ## Verification policy
 
