@@ -6,9 +6,9 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 
 | Requirement | Decisions | Implementation | Automated evidence | Rendered/E2E | Status |
 |---|---|---|---|---|---|
-| CDE-001 | D003-D007 | Pending | CDE-A01 | N/A | Specified |
-| CDE-002 | D001-D002 | Pending | CDE-A02 | Mission document UI pending | Specified |
-| CDE-003 | D001-D004 | Pending | CDE-A03, CDE-A04 | Design Review pending | Specified |
+| CDE-001 | D003-D007, D013 | `8f92595`: domain model + SQLite v1-to-v2 migration | CDE-A01 plus exact round-trip and invalid-new-kind tests | N/A | Verified |
+| CDE-002 | D001-D002 | `8f92595`: document catalog, preparation flow, phase inputs | CDE-A02 plus Research-from-seed test | Mission document UI pending | Implemented |
+| CDE-003 | D001-D004 | `8f92595`: composite approval metadata and optimistic brief revision check | CDE-A03, CDE-A04 | Design Review pending | Implemented |
 | CDE-004 | D005-D007, D011 | Pending | CDE-A05 | N/A | Specified |
 | CDE-005 | D003, D007 | Pending | CDE-A06 | WorkPlan UI pending | Specified |
 | CDE-006 | D005, D012 | Pending | CDE-A07 | N/A | Specified |
@@ -33,7 +33,8 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 
 | Date | Commit | Increment | Evidence | Result |
 |---|---|---|---|---|
-| 2026-08-15 | pending | SDD package | Requirements and decisions reviewed from design baseline | Specified |
+| 2026-08-15 | `4e58a33` | SDD package | Requirements and decisions reviewed from design baseline | Specified |
+| 2026-08-15 | `8f92595` | Contract schema, brief boundary and composite approval | 162 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend; rendered UI pending |
 
 ## Verification policy
 
