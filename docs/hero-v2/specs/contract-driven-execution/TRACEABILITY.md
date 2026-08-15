@@ -1,0 +1,45 @@
+# Contract-driven execution traceability
+
+Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
+
+## Requirement matrix
+
+| Requirement | Decisions | Implementation | Automated evidence | Rendered/E2E | Status |
+|---|---|---|---|---|---|
+| CDE-001 | D003-D007 | Pending | CDE-A01 | N/A | Specified |
+| CDE-002 | D001-D002 | Pending | CDE-A02 | Mission document UI pending | Specified |
+| CDE-003 | D001-D004 | Pending | CDE-A03, CDE-A04 | Design Review pending | Specified |
+| CDE-004 | D005-D007, D011 | Pending | CDE-A05 | N/A | Specified |
+| CDE-005 | D003, D007 | Pending | CDE-A06 | WorkPlan UI pending | Specified |
+| CDE-006 | D005, D012 | Pending | CDE-A07 | N/A | Specified |
+| CDE-007 | D005-D007, D011 | Pending | CDE-A08, CDE-A09 | Materialization UI pending | Specified |
+| CDE-008 | D008, D012 | Pending | CDE-A10 | Ownership UI pending | Specified |
+| CDE-009 | D003, D009, D012 | Pending | Protocol tests | CDE-A11 | Specified |
+| CDE-010 | D008, D010, D012 | Pending | Authorization/tool tests | CDE-A12, CDE-A13 | Specified |
+| CDE-011 | D006, D011 | Pending | Preview/state tests | CDE-A15 | Specified |
+| CDE-012 | D001, D008 | Existing amendment flow to extend | CDE-A14 | Amendment UI pending | Specified |
+| CDE-013 | All | Pending | Full suites | CDE-A11-CDE-A15 | Specified |
+
+## Baseline evidence
+
+- Design proposal: `hero-graph-lab@030a11e`,
+  `docs/design/contract-driven-execution.md`.
+- HARNESS baseline: `08fb081` (`feat: add interactive mission control plane`).
+- HARNESS baseline validation on 2026-08-15: 157 `unittest` tests passed;
+  all 44 modified/new Python files passed Ruff before the baseline commit.
+- Graph Lab baseline: clean at `030a11e` after its contract design document.
+
+## Increment log
+
+| Date | Commit | Increment | Evidence | Result |
+|---|---|---|---|---|
+| 2026-08-15 | pending | SDD package | Requirements and decisions reviewed from design baseline | Specified |
+
+## Verification policy
+
+- Focused tests establish the changed contract only.
+- The full repository suite is required before each implementation commit.
+- Protocol initialization and actual tool calls are required for MCP claims.
+- Playwright-rendered state is required for Chat and contract UX claims.
+- A passing automated state model is not evidence that the rendered browser is
+  correct.
