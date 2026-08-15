@@ -35,6 +35,7 @@ STALE_TASK_ALIASES = (
     "decisions.md",
     "status.md",
     "audit.md",
+    "contract-verification.json",
     "reconciliation.json",
     "_burst_progress.md",
     TASK_CONTRACT_ALIAS,
@@ -204,8 +205,11 @@ class InteractiveTaskCoordinator:
                     self.services.tasks.update(index, TaskStatus.FAILED, str(block))
                     return self._block(running, str(block))
             else:
-                self.review.approve_without_review(index, task)
+                block = self.review.approve_without_review(index, task)
                 self.documents.capture_task_documents(task.id)
+                if block is not None:
+                    self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                    return self._block(running, str(block))
             if self._amendment_requested():
                 return self._pause_for_amendment(running)
             reconciling = running.move_to(

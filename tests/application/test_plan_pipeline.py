@@ -114,9 +114,16 @@ class PlanCompilerTest(unittest.TestCase):
 
 
 class MappedFakeAgent:
-    def __init__(self, artifacts: FilesystemArtifactStore, *, cover_everything: bool = True) -> None:
+    def __init__(
+        self,
+        artifacts: FilesystemArtifactStore,
+        *,
+        cover_everything: bool = True,
+        project: Path | None = None,
+    ) -> None:
         self.artifacts = artifacts
         self.cover_everything = cover_everything
+        self.project = project
 
     def run_phase(self, request: AgentRequest) -> PhaseResult:
         phase = request.phase_name
@@ -153,6 +160,13 @@ class MappedFakeAgent:
             )
             self.artifacts.write_text("decisions.md", "# Decisions\n")
         elif phase == "implement":
+            if self.project is not None:
+                target = self.project / "src" / "cache.py"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(
+                    'class Cache:\n    """Cache values."""\n',
+                    encoding="utf-8",
+                )
             self.artifacts.write_text("status.md", "# Status\n\n## Files\n- ok.py\n\n**STATUS: DONE**\n")
         elif phase in {"report", "report_plan"}:
             self.artifacts.write_text("mission-report.md", "# Report\n\nDone\n")
@@ -231,7 +245,7 @@ def _mapped_mission(tmp: Path, *, cover_everything: bool = True):
         path.mkdir(exist_ok=True)
     (project / "ok.py").write_text("print('ok')\n", encoding="utf-8")
     artifacts = FilesystemArtifactStore(harness)
-    agent = MappedFakeAgent(artifacts, cover_everything=cover_everything)
+    agent = MappedFakeAgent(artifacts, cover_everything=cover_everything, project=project)
     commands = QueueCommandBus()
     services = AppServices(
         artifacts=artifacts,
@@ -276,6 +290,10 @@ def _mapped_mission(tmp: Path, *, cover_everything: bool = True):
                 "location": "IN_REPOSITORY",
                 "intent": "CREATE",
                 "locator": "src/cache.py:Cache",
+                "kind": "class",
+                "target_path": "src/cache.py",
+                "qualified_name": "Cache",
+                "docstring": "Cache values.",
             }
         ],
     )

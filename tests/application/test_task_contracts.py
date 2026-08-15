@@ -132,14 +132,14 @@ class TaskContractCompilerTest(unittest.TestCase):
         self.assertEqual(payload["design_revision"], 12)
         self.assertEqual(payload["brief"]["revision"], 4)
         self.assertEqual(payload["base_commit"], "abc123")
-        self.assertEqual(payload["requirements"], ["REQ-7"])
+        self.assertEqual(payload["requirements"], ["REQ-2", "REQ-7"])
         self.assertEqual(
             [operation["id"] for operation in payload["operations"]],
             ["create:telegram-notifier"],
         )
         self.assertEqual(
             [node["id"] for node in payload["nodes"]],
-            ["telegram-notifier"],
+            ["telegram-module", "telegram-notifier"],
         )
         self.assertEqual(payload["relationships"][0]["verification_level"], "hard")
 

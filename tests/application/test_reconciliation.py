@@ -138,6 +138,18 @@ class MergeGateTest(unittest.TestCase):
         result = reconcile(changeset, tasks, observed_ids={"pkg/ok.py"}, observed_revision=1)
         self.assertEqual(merge_gate_reasons(result, tasks), [])
 
+    def test_cde_required_unverifiable_operation_blocks(self) -> None:
+        operation = _op("create:required", "CREATE_NODE")
+        operation["verification_level"] = "hard"
+        result = reconcile(
+            _changeset(operation),
+            [_task("T-1", ["create:required"])],
+            observed_ids=set(),
+            observed_revision=1,
+        )
+        reasons = merge_gate_reasons(result, [_task("T-1", ["create:required"])])
+        self.assertTrue(any("unverifiable" in reason for reason in reasons))
+
     def test_d6_reconciliation_serializes(self) -> None:
         changeset = _changeset(_op("create:x", "CREATE_NODE"))
         tasks = [_task("T-1", ["create:x"])]

@@ -19,6 +19,7 @@ class OperationCheck:
     operation_id: str
     state: OperationState
     detail: str
+    blocking: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class Reconciliation:
                         "operation_id": check.operation_id,
                         "state": check.state.value,
                         "detail": check.detail,
+                        "blocking": check.blocking,
                     }
                     for check in self.checks
                 ],
@@ -69,32 +71,79 @@ def reconcile(
 
 def _check(operation: dict, task: Task | None, observed_ids: set[str]) -> OperationCheck:
     operation_id = str(operation["id"])
+    blocking = operation.get("verification_level") == "hard"
     if task is None:
-        return OperationCheck(operation_id, OperationState.PENDING, "approved but uncovered by any task")
+        return OperationCheck(
+            operation_id,
+            OperationState.PENDING,
+            "approved but uncovered by any task",
+            blocking,
+        )
     if task.status is not TaskStatus.COMPLETED:
         return OperationCheck(
             operation_id,
             OperationState.PENDING,
             f"covering task {task.id} is {task.status.value}",
+            blocking,
         )
     kind = str(operation.get("kind", ""))
     locator = operation.get("locator")
     observed = bool(locator) and locator in observed_ids
     if kind == "CREATE_NODE":
         if not locator:
-            return OperationCheck(operation_id, OperationState.UNVERIFIABLE, "no expected locator to observe")
+            return OperationCheck(
+                operation_id,
+                OperationState.UNVERIFIABLE,
+                "no expected locator to observe",
+                blocking,
+            )
         if observed:
-            return OperationCheck(operation_id, OperationState.MATERIALIZED, f"observed: {locator}")
-        return OperationCheck(operation_id, OperationState.DIVERGENT, f"expected symbol not observed: {locator}")
+            return OperationCheck(
+                operation_id,
+                OperationState.MATERIALIZED,
+                f"observed: {locator}",
+                blocking,
+            )
+        return OperationCheck(
+            operation_id,
+            OperationState.DIVERGENT,
+            f"expected symbol not observed: {locator}",
+            blocking,
+        )
     if kind == "MODIFY_NODE":
         if observed:
-            return OperationCheck(operation_id, OperationState.MATERIALIZED, f"anchor still observed: {locator}")
-        return OperationCheck(operation_id, OperationState.DIVERGENT, f"anchor disappeared: {locator}")
+            return OperationCheck(
+                operation_id,
+                OperationState.MATERIALIZED,
+                f"anchor still observed: {locator}",
+                blocking,
+            )
+        return OperationCheck(
+            operation_id,
+            OperationState.DIVERGENT,
+            f"anchor disappeared: {locator}",
+            blocking,
+        )
     if kind == "REMOVE_NODE":
         if not observed:
-            return OperationCheck(operation_id, OperationState.MATERIALIZED, f"no longer observed: {locator}")
-        return OperationCheck(operation_id, OperationState.DIVERGENT, f"target still observed: {locator}")
-    return OperationCheck(operation_id, OperationState.UNVERIFIABLE, "relations are not observable in v1")
+            return OperationCheck(
+                operation_id,
+                OperationState.MATERIALIZED,
+                f"no longer observed: {locator}",
+                blocking,
+            )
+        return OperationCheck(
+            operation_id,
+            OperationState.DIVERGENT,
+            f"target still observed: {locator}",
+            blocking,
+        )
+    return OperationCheck(
+        operation_id,
+        OperationState.UNVERIFIABLE,
+        "relation is not observed by the graph reconciler",
+        blocking,
+    )
 
 
 def merge_gate_reasons(reconciliation: Reconciliation, tasks: list[Task]) -> list[str]:
@@ -109,4 +158,6 @@ def merge_gate_reasons(reconciliation: Reconciliation, tasks: list[Task]) -> lis
             reasons.append(f"operation not materialized: {check.operation_id} ({check.detail})")
         elif check.state is OperationState.DIVERGENT:
             reasons.append(f"divergence: {check.operation_id} ({check.detail})")
+        elif check.state is OperationState.UNVERIFIABLE and check.blocking:
+            reasons.append(f"required operation unverifiable: {check.operation_id} ({check.detail})")
     return reasons

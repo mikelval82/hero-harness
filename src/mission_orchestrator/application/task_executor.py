@@ -24,6 +24,7 @@ STALE_TASK_ARTIFACTS = (
     "decisions.md",
     "status.md",
     "audit.md",
+    "contract-verification.json",
     "_burst_progress.md",
     TASK_CONTRACT_ALIAS,
 )
@@ -90,8 +91,7 @@ class TaskExecutor:
             if PhaseName.REVIEW in pipeline.phases:
                 block = self.review.commit_or_request_human(index, task)
             else:
-                self.review.approve_without_review(index, task)
-                block = None
+                block = self.review.approve_without_review(index, task)
             if block:
                 if block.is_mission_abort:
                     self.block = block

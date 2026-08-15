@@ -17,12 +17,14 @@ MISSION_DOCUMENTS = {
     "mission/report": "mission-report.md",
 }
 TASK_DOCUMENTS = {
+    "contract": "task-contract.json",
     "spec": "spec.md",
     "plan": "plan.md",
     "decisions": "decisions.md",
     "status": "status.md",
     "audit": "audit.md",
     "reconciliation": "reconciliation.json",
+    "verification": "contract-verification.json",
 }
 
 

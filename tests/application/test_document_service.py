@@ -82,6 +82,16 @@ class MissionDocumentServiceTest(unittest.TestCase):
         self.assertEqual(self.artifacts.read_text("brief-seed.md"), "# Detailed input brief\n")
         self.assertIsNone(self.catalog.get("mission/brief"))
 
+    def test_contract_and_verification_are_versioned_task_documents(self) -> None:
+        self.assertEqual(
+            self.service.alias_for("task/t-1/contract"),
+            ("task-contract.json", "t-1"),
+        )
+        self.assertEqual(
+            self.service.alias_for("task/t-1/verification"),
+            ("contract-verification.json", "t-1"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,15 @@ class TaskContractCompiler:
             covered = self._covered_operations(task, operations)
             target_ids = self._target_ids(task, covered, nodes)
             relationships = self._relationships(snapshot, target_ids)
+            for relationship in relationships:
+                target_ids.add(str(relationship["source"]))
+                target_ids.add(str(relationship["target"]))
+            unknown_relationship_nodes = sorted(target_ids - nodes.keys())
+            if unknown_relationship_nodes:
+                raise ValueError(
+                    f"task {task.id} relationship references unknown target node: "
+                    f"{unknown_relationship_nodes[0]}"
+                )
             task_nodes = [nodes[node_id] for node_id in sorted(target_ids)]
             requirements = sorted(
                 {

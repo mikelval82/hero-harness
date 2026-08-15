@@ -121,3 +121,14 @@ snapshot must produce identical bytes; a different payload at that path is a
 conflict. The mutable `task-contract.json` file is only an execution-time alias
 to the selected immutable slice, allowing every phase to use one stable include
 without weakening snapshot immutability.
+
+## CDE-D015 - Verify Python statically before task completion
+
+Date: 2026-08-15
+
+HARNESS parses required Python targets with the standard-library AST and never
+imports or executes project code for structural verification. Both classic and
+interactive Mission routes call the same verifier before marking a task
+complete. Failures are written with node-and-field evidence to
+`contract-verification.json` and block completion; advisory relationships do
+not block.
