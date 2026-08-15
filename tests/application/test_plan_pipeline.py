@@ -199,6 +199,9 @@ class _Git:
     def setup_branch(self, branch: str) -> str:
         return branch
 
+    def current_commit(self) -> str:
+        return "test-head"
+
     def stage_files(self, files) -> None:  # noqa: ANN001
         pass
 

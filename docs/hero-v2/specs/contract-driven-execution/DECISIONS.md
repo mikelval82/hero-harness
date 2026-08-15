@@ -99,3 +99,14 @@ Date: 2026-08-15
 Mission calls the contract service directly, Graph Lab Chat uses an internal
 adapter, and external agents use MCP. Mission does not call its own MCP server;
 that would add transport failure modes and a Graph Lab/HARNESS lifecycle cycle.
+
+## CDE-D013 - Preserve unknown legacy kinds explicitly
+
+Date: 2026-08-15
+
+Schema-v1 CODE rows do not contain enough evidence to distinguish class,
+function, and method, while PACKAGE rows conflate packages and modules.
+Migration records `unknown` instead of guessing from labels or capitalization;
+only SYSTEM is unambiguous. Contract-aware clients must supply an exact kind for
+new nodes. Legacy `unknown` CREATE nodes remain incomplete and later compilation
+will report them as issues.

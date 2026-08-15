@@ -35,6 +35,9 @@ class SubprocessGitService:
         self._run(["git", "checkout", branch])
         return branch
 
+    def current_commit(self) -> str:
+        return self._run(["git", "rev-parse", "HEAD"]).stdout.strip()
+
     def stage_files(self, files: list[Path]) -> None:
         if not files:
             return
@@ -153,4 +156,3 @@ class SubprocessGitService:
             if result.returncode == 0:
                 return candidate
         return "powershell"
-

@@ -177,6 +177,7 @@ class MissionControlPlane:
             return self.preparation.approve_design_and_structure(
                 expected_session_revision=revision,
                 base_design_revision=self._required_int(body, "base_design_revision"),
+                base_brief_revision=self._optional_int(body, "base_brief_revision"),
             )
         if action == "approve-execution":
             return self.preparation.approve_execution(expected_session_revision=revision)
@@ -267,6 +268,15 @@ class MissionControlPlane:
     @staticmethod
     def _required_int(body: dict, key: str) -> int:
         value = body.get(key)
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{key} must be an integer")
+        return value
+
+    @staticmethod
+    def _optional_int(body: dict, key: str) -> int | None:
+        value = body.get(key)
+        if value is None:
+            return None
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError(f"{key} must be an integer")
         return value

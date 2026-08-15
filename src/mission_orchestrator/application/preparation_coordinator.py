@@ -81,6 +81,36 @@ class PreparationCoordinator:
             self._save(current, updated)
             return PreparationResult(updated)
 
+    def save_brief_seed(
+        self,
+        *,
+        content: str,
+        expected_session_revision: int,
+        base_document_revision: int,
+        command_id: str,
+    ) -> PreparationResult:
+        if not content.strip():
+            raise ValueError("brief seed Markdown must not be empty")
+        with self._action_lock:
+            current = self._expected(
+                expected_session_revision,
+                MissionStage.DRAFT,
+                "save_brief_seed",
+            )
+            document = self.documents.save(
+                logical_id="mission/brief-seed",
+                alias="brief-seed.md",
+                content=content,
+                author="HUMAN",
+                base_revision=base_document_revision,
+                command_id=command_id,
+            )
+            if document.status is not DocumentSaveStatus.APPLIED:
+                return PreparationResult(current, False, document.detail)
+            updated = current.touch()
+            self._save(current, updated)
+            return PreparationResult(updated)
+
     def run_research(self, *, expected_session_revision: int) -> PreparationResult:
         with self._action_lock:
             current = self._expected(
@@ -88,8 +118,11 @@ class PreparationCoordinator:
                 (MissionStage.DRAFT, MissionStage.RESEARCH_REVIEW),
                 "run_research",
             )
-            if self.catalog.get("mission/idea") is None:
-                raise ValueError("mission idea must be saved before research")
+            if (
+                self.catalog.get("mission/idea") is None
+                and self.catalog.get("mission/brief-seed") is None
+            ):
+                raise ValueError("mission idea or brief seed must be saved before research")
             running = current.move_to(MissionStage.RESEARCHING, active_phase="research")
             self._save(current, running)
             self.services.code_graph.build(self.context.project_dir)
@@ -131,6 +164,7 @@ class PreparationCoordinator:
         *,
         expected_session_revision: int,
         base_design_revision: int,
+        base_brief_revision: int | None = None,
     ) -> PreparationResult:
         with self._action_lock:
             current = self._expected(
@@ -143,12 +177,20 @@ class PreparationCoordinator:
                 project_scope_dir=self.context.project_scope_dir,
                 artifacts=self.services.artifacts,
                 events=self.services.events,
-            ).approve(base_revision=base_design_revision)
+                catalog=self.catalog,
+                git=self.services.git,
+                project_name=self.context.project_name,
+                project_dir=self.context.project_dir,
+            ).approve(
+                base_revision=base_design_revision,
+                base_brief_revision=base_brief_revision,
+            )
             if design.status is not ApplyStatus.APPLIED:
                 return PreparationResult(
                     current,
                     False,
-                    f"design revision conflict; current revision is {design.design_revision}",
+                    design.detail
+                    or f"design revision conflict; current revision is {design.design_revision}",
                 )
             running = current.move_to(
                 MissionStage.STRUCTURING,

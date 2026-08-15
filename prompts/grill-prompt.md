@@ -5,6 +5,9 @@ Mission: {{TASK}}
 Brainstorm:
 {{BRAINSTORM}}
 
+Detailed brief seed, when supplied:
+{{BRIEF_SEED}}
+
 Tasks:
 {{TASKS}}
 
@@ -20,4 +23,3 @@ Required sections:
 Required ending:
 
 **STATUS: DONE**
-

@@ -10,6 +10,7 @@ from mission_orchestrator.ports.events import EventPublisher
 
 MISSION_DOCUMENTS = {
     "mission/idea": "idea.md",
+    "mission/brief-seed": "brief-seed.md",
     "mission/brainstorm": "brainstorm.md",
     "mission/brief": "brief.md",
     "mission/tasks": "tasks.json",

@@ -35,6 +35,16 @@ class DesignLevel(Enum):
     CODE = "CODE"
 
 
+class DesignKind(Enum):
+    UNKNOWN = "unknown"
+    SYSTEM = "system"
+    PACKAGE = "package"
+    MODULE = "module"
+    CLASS = "class"
+    FUNCTION = "function"
+    METHOD = "method"
+
+
 class ApplyStatus(Enum):
     APPLIED = "APPLIED"
     CONFLICT = "CONFLICT"
@@ -53,6 +63,20 @@ class DesignNode:
     parent_id: str | None = None
     locator: str | None = None
     description: str = ""
+    kind: str = DesignKind.UNKNOWN.value
+    target_path: str = ""
+    qualified_name: str = ""
+    signature: str = ""
+    docstring: str = ""
+    satisfies: tuple[str, ...] = ()
+    acceptance: tuple[str, ...] = ()
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            **self.__dict__,
+            "satisfies": list(self.satisfies),
+            "acceptance": list(self.acceptance),
+        }
 
 
 @dataclass(frozen=True)

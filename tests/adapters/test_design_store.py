@@ -200,6 +200,105 @@ class DesignStoreTest(unittest.TestCase):
         self.assertEqual({n.id for n in self.store.nodes(parent_id="pkg1")}, {"code1"})
         self.assertEqual({n.id for n in self.store.nodes(intent="CHANGE")}, {"code1"})
 
+    def test_cde_a01_migrates_v1_without_losing_authorial_data(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            db_path = Path(raw) / "design.db"
+            connection = sqlite3.connect(db_path)
+            connection.executescript(
+                """
+                CREATE TABLE design_nodes(
+                  id TEXT PRIMARY KEY, label TEXT NOT NULL, level TEXT NOT NULL,
+                  provenance TEXT NOT NULL, location TEXT NOT NULL, intent TEXT NOT NULL,
+                  parent_id TEXT, locator TEXT, description TEXT NOT NULL DEFAULT ''
+                );
+                CREATE TABLE design_meta(key TEXT PRIMARY KEY, value TEXT);
+                CREATE TABLE operations(
+                  seq INTEGER PRIMARY KEY AUTOINCREMENT, operation_id TEXT UNIQUE NOT NULL,
+                  author TEXT NOT NULL, ts TEXT NOT NULL, base_revision INTEGER NOT NULL,
+                  ops_json TEXT NOT NULL, status TEXT NOT NULL,
+                  result_revision INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT ''
+                );
+                INSERT INTO design_nodes VALUES(
+                  'legacy', 'LegacyThing', 'CODE', 'HUMAN', 'IN_REPOSITORY',
+                  'CREATE', NULL, 'legacy.py:LegacyThing', 'Keep this decision'
+                );
+                INSERT INTO design_meta VALUES('design_revision', '3');
+                INSERT INTO operations(
+                  operation_id, author, ts, base_revision, ops_json, status,
+                  result_revision, detail
+                ) VALUES('legacy-op', 'HUMAN', '2026-08-15', 2, '[]', 'APPLIED', 3, '');
+                PRAGMA user_version = 1;
+                """
+            )
+            connection.commit()
+            connection.close()
+
+            migrated = DesignStore(db_path)
+            node = migrated.nodes()[0]
+
+            self.assertEqual(migrated.current_revision(), 3)
+            self.assertEqual(node.id, "legacy")
+            self.assertEqual(node.description, "Keep this decision")
+            self.assertEqual(node.kind, "unknown")
+            self.assertEqual(node.satisfies, ())
+            self.assertEqual(migrated.history()[0].operation_id, "legacy-op")
+            verified = sqlite3.connect(db_path)
+            self.assertEqual(verified.execute("PRAGMA user_version").fetchone()[0], 2)
+            verified.close()
+
+    def test_cde_node_contract_roundtrips_and_is_snapshotted(self) -> None:
+        result = self.store.apply(
+            operation_id="contract-1",
+            author="HUMAN",
+            base_revision=0,
+            operations=[
+                _node(
+                    "telegram_gateway",
+                    kind="class",
+                    target_path="src/app/telegram/gateway.py",
+                    qualified_name="TelegramGateway",
+                    docstring="Telegram transport boundary.",
+                    satisfies=["BR-002"],
+                    acceptance=["SDK types do not escape the adapter."],
+                ),
+                _node(
+                    "send_notification",
+                    kind="method",
+                    parent_id="telegram_gateway",
+                    target_path="src/app/telegram/gateway.py",
+                    qualified_name="TelegramGateway.send_notification",
+                    signature="send_notification(self, chat_id: str, text: str) -> str",
+                    docstring="Send one notification.",
+                    satisfies=["BR-002"],
+                ),
+            ],
+        )
+
+        self.assertEqual(result.status, ApplyStatus.APPLIED)
+        nodes = {node.id: node for node in self.store.nodes()}
+        self.assertEqual(nodes["telegram_gateway"].kind, "class")
+        self.assertEqual(nodes["telegram_gateway"].target_path, "src/app/telegram/gateway.py")
+        self.assertEqual(nodes["telegram_gateway"].satisfies, ("BR-002",))
+        self.assertEqual(
+            nodes["send_notification"].signature,
+            "send_notification(self, chat_id: str, text: str) -> str",
+        )
+        snapshot = self.store.approve(base_revision=1, observed_revision=4).snapshot
+        stored = {node["id"]: node for node in snapshot["nodes"]}
+        self.assertEqual(stored["telegram_gateway"]["kind"], "class")
+        self.assertEqual(stored["telegram_gateway"]["acceptance"], ["SDK types do not escape the adapter."])
+
+    def test_cde_new_contract_cannot_explicitly_use_unknown_kind(self) -> None:
+        result = self.store.apply(
+            operation_id="unknown-kind",
+            author="AGENT",
+            base_revision=0,
+            operations=[_node("ambiguous", kind="unknown")],
+        )
+
+        self.assertEqual(result.status, ApplyStatus.REJECTED)
+        self.assertIn("exact kind", result.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

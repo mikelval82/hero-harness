@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -57,6 +58,53 @@ class PreparationCoordinatorTest(unittest.TestCase):
                 agent.phases,
                 ["research", "grill", "structure"],
             )
+
+    def test_cde_brief_seed_can_start_research_and_approval_pins_brief(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
+            root = Path(raw)
+            agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
+            services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            agent.artifacts = services.artifacts
+            catalog = SqliteDocumentCatalog(context.harness_dir / "documents.db")
+            documents = MissionDocumentService(services.artifacts, catalog, services.events)
+            coordinator = PreparationCoordinator(
+                services=services,
+                context=context,
+                sessions=FilesystemMissionSessionStore(services.artifacts),
+                documents=documents,
+                catalog=catalog,
+            )
+
+            seed = coordinator.save_brief_seed(
+                content="# Detailed initial brief\n",
+                expected_session_revision=0,
+                base_document_revision=0,
+                command_id="seed-1",
+            )
+            research = coordinator.run_research(expected_session_revision=seed.session.revision)
+            grill = coordinator.run_grill(expected_session_revision=research.session.revision)
+            stale = coordinator.approve_design_and_structure(
+                expected_session_revision=grill.session.revision,
+                base_design_revision=0,
+                base_brief_revision=0,
+            )
+            self.assertFalse(stale.accepted)
+            self.assertIn("brief revision conflict", stale.detail)
+
+            structured = coordinator.approve_design_and_structure(
+                expected_session_revision=grill.session.revision,
+                base_design_revision=0,
+                base_brief_revision=1,
+            )
+            snapshot = json.loads(services.artifacts.read_text("approved_snapshot.json"))
+
+            self.assertTrue(structured.accepted)
+            self.assertEqual(snapshot["brief"], {"logical_id": "mission/brief", "revision": 1})
+            self.assertEqual(snapshot["project"]["name"], context.project_name)
+            self.assertEqual(snapshot["project"]["path"], str(context.project_dir))
+            self.assertEqual(snapshot["base_commit"], "test-head")
+            self.assertEqual(catalog.get("mission/brief-seed").author, "HUMAN")
+            self.assertEqual(catalog.get("mission/brief").author, "AGENT")
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@ cannot yet prove that they implement the same approved design.
 
 HARNESS shall extend `DesignNode` with:
 
-- exact `kind`: `package`, `module`, `class`, `function`, or `method`;
+- exact `kind`: `system`, `package`, `module`, `class`, `function`, or `method`;
 - `target_path` for the intended repository-relative source location;
 - `qualified_name` where a code symbol is expected;
 - `signature` for functions and methods;
@@ -70,8 +70,10 @@ HARNESS shall extend `DesignNode` with:
 
 The SQLite design store shall use a forward schema migration that preserves
 existing authorial nodes and operations. Existing rows shall receive explicit
-empty/default contract values; the migration shall never recreate or discard the
-database.
+empty/default contract values, including a visible `unknown` kind when the v1
+level cannot determine an exact code kind; the migration shall never recreate or
+discard the database. New contract-aware clients shall not create `unknown`
+nodes.
 
 ### CDE-002 - Brief seed is distinct from approved brief
 

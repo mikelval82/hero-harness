@@ -18,7 +18,11 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         DESIGN_TOOLS,
         75,
         1200,
-        {"GRAPH_INSTRUCTIONS": GRAPH},
+        {
+            "IDEA": "idea.md",
+            "BRIEF_SEED": "brief-seed.md",
+            "GRAPH_INSTRUCTIONS": GRAPH,
+        },
     ),
     PhaseName.STRUCTURE: PhaseConfig(
         PhaseName.STRUCTURE,
@@ -38,7 +42,12 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         DESIGN_TOOLS,
         50,
         3600,
-        {"BRAINSTORM": "brainstorm.md", "TASKS": "tasks.json", "GRAPH_INSTRUCTIONS": GRAPH},
+        {
+            "BRAINSTORM": "brainstorm.md",
+            "BRIEF_SEED": "brief-seed.md",
+            "TASKS": "tasks.json",
+            "GRAPH_INSTRUCTIONS": GRAPH,
+        },
         is_conversation=True,
     ),
     PhaseName.SPEC: PhaseConfig(
@@ -174,4 +183,3 @@ PHASES: dict[PhaseName, PhaseConfig] = {
 
 def get_phase_config(name: PhaseName) -> PhaseConfig:
     return PHASES[name]
-

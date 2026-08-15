@@ -13,6 +13,7 @@ from mission_orchestrator.domain.design import (
     ApplyResult,
     ApplyStatus,
     DesignEdge,
+    DesignKind,
     DesignLevel,
     DesignNode,
     Intent,
@@ -23,7 +24,7 @@ from mission_orchestrator.domain.design import (
     SnapshotResult,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS design_nodes(
@@ -35,7 +36,14 @@ CREATE TABLE IF NOT EXISTS design_nodes(
   intent TEXT NOT NULL,
   parent_id TEXT,
   locator TEXT,
-  description TEXT NOT NULL DEFAULT ''
+  description TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'unknown',
+  target_path TEXT NOT NULL DEFAULT '',
+  qualified_name TEXT NOT NULL DEFAULT '',
+  signature TEXT NOT NULL DEFAULT '',
+  docstring TEXT NOT NULL DEFAULT '',
+  satisfies_json TEXT NOT NULL DEFAULT '[]',
+  acceptance_json TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS design_edges(
   source TEXT NOT NULL,
@@ -66,7 +74,22 @@ CREATE TABLE IF NOT EXISTS operations(
 """
 
 _IMMUTABLE_NODE_FIELDS = {"provenance"}
-_UPDATABLE_NODE_FIELDS = {"label", "level", "location", "intent", "parent_id", "locator", "description"}
+_UPDATABLE_NODE_FIELDS = {
+    "label",
+    "level",
+    "location",
+    "intent",
+    "parent_id",
+    "locator",
+    "description",
+    "kind",
+    "target_path",
+    "qualified_name",
+    "signature",
+    "docstring",
+    "satisfies",
+    "acceptance",
+}
 
 
 class DesignStoreVersionError(RuntimeError):
@@ -85,6 +108,9 @@ class DesignStore:
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.db_path)
         version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+        if version == 1:
+            self._migrate_v1_to_v2(connection)
+            version = SCHEMA_VERSION
         if version in (0, SCHEMA_VERSION):
             connection.executescript(SCHEMA)
             connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
@@ -96,6 +122,32 @@ class DesignStore:
                 "authorial data is never migrated destructively - migrate manually"
             )
         return connection
+
+    @staticmethod
+    def _migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
+        migrations = (
+            "ALTER TABLE design_nodes ADD COLUMN kind TEXT NOT NULL DEFAULT 'unknown'",
+            "ALTER TABLE design_nodes ADD COLUMN target_path TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE design_nodes ADD COLUMN qualified_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE design_nodes ADD COLUMN signature TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE design_nodes ADD COLUMN docstring TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE design_nodes ADD COLUMN satisfies_json TEXT NOT NULL DEFAULT '[]'",
+            "ALTER TABLE design_nodes ADD COLUMN acceptance_json TEXT NOT NULL DEFAULT '[]'",
+        )
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in migrations:
+                connection.execute(statement)
+            connection.execute(
+                "UPDATE design_nodes SET kind = CASE "
+                "WHEN level = 'SYSTEM' THEN 'system' "
+                "ELSE 'unknown' END"
+            )
+            connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
 
     @contextmanager
     def _session(self) -> Iterator[sqlite3.Connection]:
@@ -212,12 +264,21 @@ class DesignStore:
         provenance = self._enum_value(Provenance, self._required(operation, "provenance"), "provenance")
         location = self._enum_value(Location, self._required(operation, "location"), "location")
         intent = self._enum_value(Intent, self._required(operation, "intent"), "intent")
+        kind = self._enum_value(
+            DesignKind,
+            operation.get("kind", self._legacy_kind(level)),
+            "kind",
+        )
+        if "kind" in operation and kind == DesignKind.UNKNOWN.value:
+            raise _ValidationError("new nodes require an exact kind")
         parent_id = operation.get("parent_id")
         if parent_id is not None and not self._node_exists(connection, parent_id):
             raise _ValidationError(f"parent does not exist: {parent_id}")
         connection.execute(
-            "INSERT INTO design_nodes(id, label, level, provenance, location, intent, parent_id, locator, description) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO design_nodes("
+            "id, label, level, provenance, location, intent, parent_id, locator, description, "
+            "kind, target_path, qualified_name, signature, docstring, satisfies_json, acceptance_json"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 node_id,
                 str(operation.get("label", node_id)),
@@ -228,6 +289,13 @@ class DesignStore:
                 parent_id,
                 operation.get("locator"),
                 str(operation.get("description", "")),
+                kind,
+                str(operation.get("target_path", "")),
+                str(operation.get("qualified_name", "")),
+                str(operation.get("signature", "")),
+                str(operation.get("docstring", "")),
+                json.dumps(self._text_list(operation, "satisfies", maximum=100), ensure_ascii=False),
+                json.dumps(self._text_list(operation, "acceptance", maximum=1000), ensure_ascii=False),
             ),
         )
 
@@ -248,6 +316,22 @@ class DesignStore:
             fields["location"] = self._enum_value(Location, fields["location"], "location")
         if "intent" in fields:
             fields["intent"] = self._enum_value(Intent, fields["intent"], "intent")
+        if "kind" in fields:
+            fields["kind"] = self._enum_value(DesignKind, fields["kind"], "kind")
+            if fields["kind"] == DesignKind.UNKNOWN.value:
+                raise _ValidationError("updated nodes require an exact kind")
+        if "satisfies" in fields:
+            fields["satisfies_json"] = json.dumps(
+                self._text_list(fields, "satisfies", maximum=100),
+                ensure_ascii=False,
+            )
+            del fields["satisfies"]
+        if "acceptance" in fields:
+            fields["acceptance_json"] = json.dumps(
+                self._text_list(fields, "acceptance", maximum=1000),
+                ensure_ascii=False,
+            )
+            del fields["acceptance"]
         if "parent_id" in fields and fields["parent_id"] is not None:
             if not self._node_exists(connection, fields["parent_id"]):
                 raise _ValidationError(f"parent does not exist: {fields['parent_id']}")
@@ -335,17 +419,11 @@ class DesignStore:
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._session() as connection:
             rows = connection.execute(
-                f"SELECT id, label, level, provenance, location, intent, parent_id, locator, description "
+                f"SELECT {self._node_columns()} "
                 f"FROM design_nodes {where} ORDER BY id",
                 params,
             ).fetchall()
-        return [
-            DesignNode(
-                id=row[0], label=row[1], level=row[2], provenance=row[3],
-                location=row[4], intent=row[5], parent_id=row[6], locator=row[7], description=row[8],
-            )
-            for row in rows
-        ]
+        return [self._node_from_row(row) for row in rows]
 
     def edges(self) -> list[DesignEdge]:
         with self._session() as connection:
@@ -376,15 +454,22 @@ class DesignStore:
             row = connection.execute("SELECT 1 FROM nodes WHERE id = ?", (node.locator,)).fetchone()
         return Resolution.RESOLVED if row else Resolution.UNRESOLVED
 
-    def approve(self, *, base_revision: int, observed_revision: int) -> SnapshotResult:
+    def approve(
+        self,
+        *,
+        base_revision: int,
+        observed_revision: int,
+        metadata: dict[str, object] | None = None,
+    ) -> SnapshotResult:
         with self._session() as connection:
             revision = self._revision(connection)
             if base_revision != revision:
                 return SnapshotResult(ApplyStatus.CONFLICT, None)
             payload = {
+                **(metadata or {}),
                 "design_revision": revision,
                 "observed_revision": observed_revision,
-                "nodes": [node.__dict__ for node in self._nodes_in(connection)],
+                "nodes": [node.to_json() for node in self._nodes_in(connection)],
                 "edges": [edge.__dict__ for edge in self._edges_in(connection)],
             }
             canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False)
@@ -399,16 +484,61 @@ class DesignStore:
 
     def _nodes_in(self, connection: sqlite3.Connection) -> list[DesignNode]:
         rows = connection.execute(
-            "SELECT id, label, level, provenance, location, intent, parent_id, locator, description "
+            f"SELECT {self._node_columns()} "
             "FROM design_nodes ORDER BY id"
         ).fetchall()
-        return [
-            DesignNode(
-                id=row[0], label=row[1], level=row[2], provenance=row[3],
-                location=row[4], intent=row[5], parent_id=row[6], locator=row[7], description=row[8],
-            )
-            for row in rows
-        ]
+        return [self._node_from_row(row) for row in rows]
+
+    @staticmethod
+    def _legacy_kind(level: str) -> str:
+        if level == DesignLevel.SYSTEM.value:
+            return DesignKind.SYSTEM.value
+        return DesignKind.UNKNOWN.value
+
+    @staticmethod
+    def _text_list(source: dict, field: str, *, maximum: int) -> list[str]:
+        raw = source.get(field, [])
+        if not isinstance(raw, list):
+            raise _ValidationError(f"{field} must be a list")
+        if len(raw) > 100:
+            raise _ValidationError(f"{field} has too many items")
+        values: list[str] = []
+        for item in raw:
+            value = str(item).strip()
+            if not value:
+                raise _ValidationError(f"{field} contains an empty item")
+            if len(value) > maximum:
+                raise _ValidationError(f"{field} item is too long")
+            values.append(value)
+        return values
+
+    @staticmethod
+    def _node_columns() -> str:
+        return (
+            "id, label, level, provenance, location, intent, parent_id, locator, description, "
+            "kind, target_path, qualified_name, signature, docstring, satisfies_json, acceptance_json"
+        )
+
+    @staticmethod
+    def _node_from_row(row: tuple) -> DesignNode:
+        return DesignNode(
+            id=row[0],
+            label=row[1],
+            level=row[2],
+            provenance=row[3],
+            location=row[4],
+            intent=row[5],
+            parent_id=row[6],
+            locator=row[7],
+            description=row[8],
+            kind=row[9],
+            target_path=row[10],
+            qualified_name=row[11],
+            signature=row[12],
+            docstring=row[13],
+            satisfies=tuple(json.loads(row[14])),
+            acceptance=tuple(json.loads(row[15])),
+        )
 
     def _edges_in(self, connection: sqlite3.Connection) -> list[DesignEdge]:
         rows = connection.execute(

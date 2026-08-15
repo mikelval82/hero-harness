@@ -65,6 +65,23 @@ class MissionDocumentServiceTest(unittest.TestCase):
         self.assertEqual(duplicate.status, DocumentSaveStatus.DUPLICATE)
         self.assertEqual(self.catalog.get("mission/brainstorm").revision, 1)
 
+    def test_cde_brief_seed_has_a_distinct_logical_id_and_alias(self) -> None:
+        alias, task_id = self.service.alias_for("mission/brief-seed")
+        result = self.service.save(
+            logical_id="mission/brief-seed",
+            alias=alias,
+            content="# Detailed input brief\n",
+            author="HUMAN",
+            base_revision=0,
+            command_id="brief-seed-1",
+        )
+
+        self.assertEqual(task_id, "")
+        self.assertEqual(alias, "brief-seed.md")
+        self.assertEqual(result.status, DocumentSaveStatus.APPLIED)
+        self.assertEqual(self.artifacts.read_text("brief-seed.md"), "# Detailed input brief\n")
+        self.assertIsNone(self.catalog.get("mission/brief"))
+
 
 if __name__ == "__main__":
     unittest.main()
