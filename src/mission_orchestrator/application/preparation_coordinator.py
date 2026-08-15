@@ -9,6 +9,7 @@ from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.application.design_approval import DesignApprovalService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.phase_executor import PhaseExecutor
+from mission_orchestrator.application.task_contracts import TaskContractCompiler
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.design import ApplyStatus
 from mission_orchestrator.domain.document import DocumentSaveStatus
@@ -209,6 +210,10 @@ class PreparationCoordinator:
             structure_error = self._structure_error()
             if structure_error:
                 return self._block(running, structure_error)
+            try:
+                TaskContractCompiler(self.services.artifacts).compile(self.services.tasks.load())
+            except (ValueError, json.JSONDecodeError) as error:
+                return self._block(running, str(error))
             review = running.move_to(MissionStage.WORKPLAN_REVIEW)
             self._save(running, review)
             return PreparationResult(review)

@@ -110,3 +110,14 @@ Migration records `unknown` instead of guessing from labels or capitalization;
 only SYSTEM is unambiguous. Contract-aware clients must supply an exact kind for
 new nodes. Legacy `unknown` CREATE nodes remain incomplete and later compilation
 will report them as issues.
+
+## CDE-D014 - Version task contracts by approved snapshot
+
+Date: 2026-08-15
+
+Each task contract is stored at
+`task-contracts/<snapshot-id>/<task-id>.json`. Recompiling the same task and
+snapshot must produce identical bytes; a different payload at that path is a
+conflict. The mutable `task-contract.json` file is only an execution-time alias
+to the selected immutable slice, allowing every phase to use one stable include
+without weakening snapshot immutability.

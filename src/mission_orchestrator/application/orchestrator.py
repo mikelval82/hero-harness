@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.application.approval import ApprovalCoordinator, ApprovalOutcome
 from mission_orchestrator.application.context_compactor import ContextCompactor
@@ -11,6 +13,7 @@ from mission_orchestrator.application.report_service import ReportService
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.application.signal_controller import SignalController
 from mission_orchestrator.application.task_executor import TaskExecutor
+from mission_orchestrator.application.task_contracts import TaskContractCompiler
 from mission_orchestrator.domain.block import BlockKind, BlockReason
 from mission_orchestrator.domain.mission import MissionContext, MissionMode
 from mission_orchestrator.domain.phase import PhaseName
@@ -138,12 +141,15 @@ class MissionOrchestrator:
             return False
         raw = self.services.artifacts.read_text("changeset.json", default="")
         if raw:
-            import json
-
             operation_ids = [op["id"] for op in json.loads(raw).get("operations", [])]
             errors = validate_plan(operation_ids, tasks)
             if errors:
                 self.block = BlockReason(BlockKind.STRUCTURE, "structure", "; ".join(errors))
+                return False
+            try:
+                TaskContractCompiler(self.services.artifacts).compile(tasks)
+            except (ValueError, json.JSONDecodeError) as error:
+                self.block = BlockReason(BlockKind.STRUCTURE, "structure", str(error))
                 return False
         return True
 
@@ -194,4 +200,3 @@ class MissionOrchestrator:
             self.services.notifier.notify(f"Merge successful: {self.context.branch} -> develop")
         else:
             self.services.notifier.notify("Merge skipped or failed validation.")
-

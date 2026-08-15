@@ -292,6 +292,14 @@ class MappedPipelineTest(unittest.TestCase):
             self.assertEqual(result.outcome, MissionOutcome.COMPLETE)
             self.assertTrue(services.artifacts.exists("approved_snapshot.json"))
             self.assertTrue(services.artifacts.exists("changeset.json"))
+            self.assertTrue(services.artifacts.exists("task-contracts/index.json"))
+            index = json.loads(services.artifacts.read_text("task-contracts/index.json"))
+            contract_path = index["contracts"]["T-1"]
+            self.assertTrue(services.artifacts.exists(contract_path))
+            self.assertEqual(
+                services.artifacts.read_text("task-contract.json"),
+                services.artifacts.read_text(contract_path),
+            )
 
     def test_d7_uncovered_operations_block_structure(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

@@ -11,6 +11,12 @@ Context cold:
 Context hot:
 {{CONTEXT_HOT}}
 
+Approved task contract (authoritative):
+{{TASK_CONTRACT}}
+
+Plan every contractual obligation. Do not rename, relocate, weaken, or remove
+one without requesting a design amendment.
+
 {{GRAPH_INSTRUCTIONS}}
 
 Write `$CLAUDE_HARNESS/plan.md` and `$CLAUDE_HARNESS/decisions.md`.
@@ -22,4 +28,3 @@ Required sections:
 Required ending:
 
 **STATUS: DONE**
-

@@ -6,6 +6,11 @@ from mission_orchestrator.application.pipeline_definitions import task_pipeline_
 from mission_orchestrator.application.review_coordinator import ReviewCoordinator
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.application.signal_controller import SignalController
+from mission_orchestrator.application.task_contracts import (
+    TASK_CONTRACT_ALIAS,
+    TASK_CONTRACT_INDEX,
+    TaskContractCompiler,
+)
 from mission_orchestrator.domain.block import BlockReason
 from mission_orchestrator.domain.mission import MissionContext, MissionMode, MissionSnapshot
 from mission_orchestrator.domain.phase import PhaseName
@@ -20,6 +25,7 @@ STALE_TASK_ARTIFACTS = (
     "status.md",
     "audit.md",
     "_burst_progress.md",
+    TASK_CONTRACT_ALIAS,
 )
 
 
@@ -54,6 +60,7 @@ class TaskExecutor:
                 break
             task = tasks[index]
             self._clear_stale_task_artifacts()
+            self._materialize_task_contract(task.id)
             self.services.code_graph.build(self.context.project_dir)
             self.services.state.update_phase(
                 MissionSnapshot(
@@ -130,3 +137,6 @@ class TaskExecutor:
         for artifact in STALE_TASK_ARTIFACTS:
             self.services.artifacts.delete(artifact)
 
+    def _materialize_task_contract(self, task_id: str) -> None:
+        if self.services.artifacts.exists(TASK_CONTRACT_INDEX):
+            TaskContractCompiler(self.services.artifacts).materialize(task_id)

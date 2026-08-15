@@ -13,6 +13,11 @@ from mission_orchestrator.application.preparation_coordinator import (
 )
 from mission_orchestrator.application.reconciler import Reconciler
 from mission_orchestrator.application.report_service import ReportService
+from mission_orchestrator.application.task_contracts import (
+    TASK_CONTRACT_ALIAS,
+    TASK_CONTRACT_INDEX,
+    TaskContractCompiler,
+)
 from mission_orchestrator.application.review_coordinator import ReviewCoordinator
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.mission import MissionContext, MissionMode, MissionSnapshot
@@ -32,6 +37,7 @@ STALE_TASK_ALIASES = (
     "audit.md",
     "reconciliation.json",
     "_burst_progress.md",
+    TASK_CONTRACT_ALIAS,
 )
 
 
@@ -70,6 +76,7 @@ class InteractiveTaskCoordinator:
             )
             self._save(current, running)
             self._clear_aliases()
+            self._materialize_task_contract(task.id)
             self.services.code_graph.build(self.context.project_dir)
             self.services.state.update_phase(
                 MissionSnapshot(
@@ -128,6 +135,7 @@ class InteractiveTaskCoordinator:
                 )
             tasks = self.services.tasks.load()
             index, task = self._find_task(tasks, task_id)
+            self._materialize_task_contract(task.id)
             running = current.move_to(
                 MissionStage.EXECUTING,
                 active_phase="execute",
@@ -159,6 +167,7 @@ class InteractiveTaskCoordinator:
                 raise InvalidSessionAction(current.stage, "retry_review")
             tasks = self.services.tasks.load()
             index, task = self._find_task(tasks, current.active_task_id)
+            self._materialize_task_contract(task.id)
             if task.status is not TaskStatus.FAILED:
                 raise ValueError(f"active task {task.id!r} is not failed")
             running = current.move_to(
@@ -311,6 +320,10 @@ class InteractiveTaskCoordinator:
     def _clear_aliases(self) -> None:
         for alias in STALE_TASK_ALIASES:
             self.services.artifacts.delete(alias)
+
+    def _materialize_task_contract(self, task_id: str) -> None:
+        if self.services.artifacts.exists(TASK_CONTRACT_INDEX):
+            TaskContractCompiler(self.services.artifacts).materialize(task_id)
 
     def _amendment_requested(self) -> bool:
         return self.services.artifacts.exists("_amendment_pending.json")

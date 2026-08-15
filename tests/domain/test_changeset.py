@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -156,11 +157,21 @@ class ChangesetCompilerTest(unittest.TestCase):
 
     def test_c10_create_with_prose_label_keeps_locator_none(self) -> None:
         result = compile_changeset(
-            _snapshot([_node("cache", "CREATE", label="Cache layer for API")]),
+            _snapshot(
+                [
+                    _node(
+                        "cache",
+                        "CREATE",
+                        label="Cache layer for API",
+                        kind="class",
+                    )
+                ]
+            ),
             observed_ids=set(),
         )
-        self.assertEqual([op.id for op in result.operations], ["create:cache"])
-        self.assertIsNone(result.operations[0].locator)
+        self.assertEqual(result.operations, ())
+        self.assertEqual(len(result.issues), 1)
+        self.assertIn("target_path", result.issues[0].detail)
 
     def test_c11_derived_locator_counts_for_materialization(self) -> None:
         result = compile_changeset(
@@ -169,6 +180,79 @@ class ChangesetCompilerTest(unittest.TestCase):
         )
         self.assertEqual(result.operations, ())
         self.assertEqual([item.reason for item in result.skipped], ["already_materialized"])
+
+    def test_cde_a05_preserves_exact_node_contract_and_derives_locator(self) -> None:
+        result = compile_changeset(
+            _snapshot(
+                [
+                    _node(
+                        "notifier",
+                        "CREATE",
+                        kind="class",
+                        target_path="src/telegram/notifier.py",
+                        qualified_name="TelegramNotifier",
+                        signature="",
+                        docstring="Send notifications through Telegram.",
+                        satisfies=["REQ-7", "REQ-2"],
+                        acceptance=["A message is delivered", "Errors are surfaced"],
+                    )
+                ]
+            ),
+            observed_ids=set(),
+        )
+
+        self.assertEqual(result.issues, ())
+        operation = result.operations[0]
+        self.assertEqual(operation.locator, "src/telegram/notifier.py:TelegramNotifier")
+        self.assertEqual(operation.node_kind, "class")
+        self.assertEqual(operation.target_path, "src/telegram/notifier.py")
+        self.assertEqual(operation.qualified_name, "TelegramNotifier")
+        self.assertEqual(operation.docstring, "Send notifications through Telegram.")
+        self.assertEqual(operation.satisfies, ("REQ-7", "REQ-2"))
+        self.assertEqual(
+            operation.acceptance,
+            ("A message is delivered", "Errors are surfaced"),
+        )
+        encoded = json.loads(changeset_to_json(result))["operations"][0]
+        self.assertEqual(encoded["node_kind"], "class")
+        self.assertEqual(encoded["satisfies"], ["REQ-7", "REQ-2"])
+
+    def test_cde_a05_classifies_relationship_verification(self) -> None:
+        result = compile_changeset(
+            _snapshot(
+                [
+                    _node(
+                        "module",
+                        "CREATE",
+                        kind="module",
+                        target_path="src/telegram/notifier.py",
+                    ),
+                    _node(
+                        "notifier",
+                        "CREATE",
+                        kind="class",
+                        target_path="src/telegram/notifier.py",
+                        qualified_name="TelegramNotifier",
+                    ),
+                ],
+                edges=[
+                    {
+                        "source": "module",
+                        "target": "notifier",
+                        "relation": "contains",
+                        "provenance": "AGENT",
+                        "intent": "CREATE",
+                    }
+                ],
+            ),
+            observed_ids=set(),
+        )
+
+        operation = next(op for op in result.operations if op.kind == "CONNECT")
+        self.assertEqual(operation.source, "module")
+        self.assertEqual(operation.target, "notifier")
+        self.assertEqual(operation.relation, "contains")
+        self.assertEqual(operation.verification_level, "hard")
 
 
 if __name__ == "__main__":
