@@ -9,9 +9,9 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | CDE-001 | D003-D007, D013 | `8f92595`: domain model + SQLite v1-to-v2 migration | CDE-A01 plus exact round-trip and invalid-new-kind tests | N/A | Verified |
 | CDE-002 | D001-D002 | `8f92595`: document catalog, preparation flow, phase inputs | CDE-A02 plus Research-from-seed test | Mission document UI pending | Implemented |
 | CDE-003 | D001-D004 | `8f92595`: composite approval metadata and optimistic brief revision check | CDE-A03, CDE-A04 | Design Review pending | Implemented |
-| CDE-004 | D005-D007, D011 | Increment 2: lossless operations, derived locators and relationship levels | CDE-A05 | N/A | Verified |
-| CDE-005 | D003, D007, D014 | Increment 2: immutable snapshot-scoped slices and active alias | CDE-A06 plus Mission pipeline assertion | WorkPlan UI pending | Verified |
-| CDE-006 | D005, D012, D014 | Increment 2: one alias included by all six contractual phases | CDE-A07 plus prompt obligations | N/A | Verified |
+| CDE-004 | D005-D007, D011 | `0a4aa0b`: lossless operations, derived locators and relationship levels | CDE-A05 | N/A | Verified |
+| CDE-005 | D003, D007, D014 | `0a4aa0b`: immutable snapshot-scoped slices and active alias | CDE-A06 plus Mission pipeline assertion | WorkPlan UI pending | Verified |
+| CDE-006 | D005, D012, D014 | `0a4aa0b`: one alias included by all six contractual phases | CDE-A07 plus prompt obligations | N/A | Verified |
 | CDE-007 | D005-D007, D011 | Pending | CDE-A08, CDE-A09 | Materialization UI pending | Specified |
 | CDE-008 | D008, D012 | Pending | CDE-A10 | Ownership UI pending | Specified |
 | CDE-009 | D003, D009, D012 | Pending | Protocol tests | CDE-A11 | Specified |
@@ -35,6 +35,7 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 |---|---|---|---|---|
 | 2026-08-15 | `4e58a33` | SDD package | Requirements and decisions reviewed from design baseline | Specified |
 | 2026-08-15 | `8f92595` | Contract schema, brief boundary and composite approval | 162 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend; rendered UI pending |
+| 2026-08-15 | `0a4aa0b` | Lossless ChangeSet and immutable task contract slices | 168 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend and Mission pipeline; rendered UI pending |
 
 ## Verification policy
 
