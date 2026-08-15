@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from mission_orchestrator.adapters.events.decorators import PublishingLogger
-from mission_orchestrator.application.errors import MaxRetriesExceeded
+from mission_orchestrator.application.errors import MaxRetriesExceeded, MaxTurnsExceeded
 from mission_orchestrator.application.phase_executor import PhaseExecutor
 from mission_orchestrator.domain.mission import MissionMode
 from mission_orchestrator.domain.phase import PhaseName, PhaseResult
@@ -44,6 +44,14 @@ class SilentAgent:
         return PhaseResult("", 1, 0.01, 1, 1)
 
 
+class MaxTurnsAgent:
+    def run_phase(self, request):  # noqa: ANN001
+        raise MaxTurnsExceeded("maximum turns exceeded", PhaseResult("", 30, 12.5, 900, 100))
+
+    def run_conversation(self, request):  # noqa: ANN001
+        return self.run_phase(request)
+
+
 class PhaseProgressEventsTest(unittest.TestCase):
     def _executor(self, tmp: Path, agent) -> tuple[PhaseExecutor, RecordingEvents]:  # noqa: ANN001
         services, context, _ = make_services(tmp, MissionMode.FOCUSED, agent=agent)
@@ -65,7 +73,10 @@ class PhaseProgressEventsTest(unittest.TestCase):
             self.assertIsNone(execution.block)
             kinds = [kind for kind, _ in events.published]
             self.assertEqual(kinds[0], "phase_started")
-            self.assertEqual(events.published[0][1], {"phase": "research", "mode": "focused"})
+            self.assertEqual(
+                events.published[0][1],
+                {"phase": "research", "mode": "focused", "max_turns": 75},
+            )
             ended = dict(events.published)[
                 "phase_ended"
             ]
@@ -99,6 +110,18 @@ class PhaseProgressEventsTest(unittest.TestCase):
             self.assertEqual(len(ended), 1)
             self.assertEqual(ended[0]["outcome"], "blocked")
             self.assertEqual(ended[0]["block_kind"], "gate_fail")
+
+    def test_max_turns_block_preserves_usage_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            executor, events = self._executor(Path(raw), MaxTurnsAgent())
+
+            execution = executor.run(PhaseName.REVIEW)
+
+            self.assertIsNotNone(execution.block)
+            ended = [payload for kind, payload in events.published if kind == "phase_ended"]
+            self.assertEqual(ended[0]["turns"], 30)
+            self.assertEqual(ended[0]["input_tokens"], 900)
+            self.assertEqual(ended[0]["output_tokens"], 100)
 
     def test_p4_publishing_logger_emits_tool_call_events(self) -> None:
         calls: list[tuple] = []

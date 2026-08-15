@@ -17,6 +17,7 @@ dev = []
 
 [project.scripts]
 mission = "mission_orchestrator.cli:main"
+mission-worker = "mission_orchestrator.worker:main"
 code-graph = "mission_orchestrator.adapters.analysis.cli:main"
 
 [tool.setuptools.packages.find]

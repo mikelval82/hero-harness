@@ -6,30 +6,15 @@ import os
 import signal
 from pathlib import Path
 
-from mission_orchestrator.adapters.analysis.service import SQLiteCodeGraphService
-from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
 from mission_orchestrator.adapters.command_bus import QueueCommandBus
-from mission_orchestrator.adapters.events.decorators import PublishingLogger, PublishingNotifier
-from mission_orchestrator.adapters.events.sqlite_log import SqliteEventLog
-from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemArtifactStore
-from mission_orchestrator.adapters.filesystem.logger import FilesystemMissionLogger
-from mission_orchestrator.adapters.filesystem.mission_registry import MissionRegistry
-from mission_orchestrator.adapters.filesystem.prompt_renderer import FilesystemPromptRenderer
-from mission_orchestrator.adapters.filesystem.state_store import FilesystemMissionStateStore
-from mission_orchestrator.adapters.filesystem.task_repository import JsonTaskRepository
-from mission_orchestrator.adapters.filesystem.workspace import WorkspaceManager, sanitize
-from mission_orchestrator.adapters.git.service import SubprocessGitService
+from mission_orchestrator.adapters.filesystem.workspace import sanitize
 from mission_orchestrator.adapters.stdin.listener import StdinListener
 from mission_orchestrator.adapters.telegram.listener import TelegramListener
-from mission_orchestrator.adapters.telegram.notifier import TelegramNotifier
-from mission_orchestrator.adapters.tools.registry import default_tool_registry
 from mission_orchestrator.adapters.web.server import MissionWebServer
-from mission_orchestrator.application.gate_evaluator import MarkdownGateEvaluator
 from mission_orchestrator.application.orchestrator import MissionOrchestrator
-from mission_orchestrator.application.services import AppServices
+from mission_orchestrator.bootstrap import RuntimeConfig, build_runtime
 from mission_orchestrator.domain.command import Command, CommandKind
-from mission_orchestrator.domain.mission import GateMode, MissionContext, MissionMode
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.domain.mission import GateMode, MissionMode
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,91 +25,40 @@ def main(argv: list[str] | None = None) -> int:
     branch = args.branch_opt or args.branch or sanitize(task.lower().replace(" ", "-"), max_len=60)
     gate_mode = GateMode.from_bool(args.gate)
     project_dir = Path.cwd().resolve()
-
-    workspace = WorkspaceManager().setup(
-        project_dir=project_dir,
-        branch=branch,
-        resume=args.resume,
-        gate_mode=gate_mode,
-    )
-    artifacts = FilesystemArtifactStore(workspace.harness_dir)
-    events = SqliteEventLog(workspace.harness_dir, mission=workspace.mission_tag)
-    logger = PublishingLogger(FilesystemMissionLogger(artifacts), events)
-    tasks = JsonTaskRepository(artifacts)
-    state = FilesystemMissionStateStore(artifacts, gate_mode)
-    commands = QueueCommandBus()
-    registry = MissionRegistry()
-    registry.register(workspace.mission_tag, workspace.harness_dir)
-    notifier = PublishingNotifier(
-        TelegramNotifier(
-            os.environ.get("TELEGRAM_TOKEN"),
-            os.environ.get("TELEGRAM_CHAT_ID"),
-            prefix=f"[{workspace.project_name}]",
-        ),
-        events,
-    )
-    git = SubprocessGitService(project_dir)
-    git.ensure_develop()
-    git.setup_branch(branch)
-
-    tool_registry = default_tool_registry(logger)
-    tool_env = ToolEnvironment(project_dir, workspace.harness_dir)
-    agent = AnthropicAgentClient(tool_registry, tool_env, commands)
-    repo_root = Path(__file__).resolve().parents[2]
-    prompts = FilesystemPromptRenderer(
-        repo_root / "prompts",
-        repo_root / "agents",
-        str(workspace.harness_dir),
-    )
-    services = AppServices(
-        artifacts=artifacts,
-        tasks=tasks,
-        state=state,
-        commands=commands,
-        agent=agent,
-        tools=tool_registry,
-        prompts=prompts,
-        gates=MarkdownGateEvaluator(artifacts),
-        notifier=notifier,
-        git=git,
-        code_graph=SQLiteCodeGraphService(workspace.harness_dir),
-        logger=logger,
-        events=events,
-    )
-    context = MissionContext(
+    runtime = build_runtime(RuntimeConfig(
         task=task,
         branch=branch,
         mode=mode,
         project_dir=project_dir,
-        harness_dir=workspace.harness_dir,
-        harness_display_path=str(workspace.harness_dir),
         gate_mode=gate_mode,
         no_grill=args.no_grill,
         max_tasks=args.max_tasks,
         resume=args.resume,
-        mission_tag=workspace.mission_tag,
-        project_name=workspace.project_name,
-        project_scope_dir=workspace.project_scope_dir,
-    )
-    _install_signal_handlers(commands)
-    atexit.register(lambda: logger.log("process exit"))
+    ))
+    services = runtime.services
+    workspace = runtime.workspace
+    _install_signal_handlers(runtime.commands)
+    atexit.register(lambda: services.logger.log("process exit"))
     if os.environ.get("TELEGRAM_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
         TelegramListener(
             token=os.environ["TELEGRAM_TOKEN"],
             chat_id=os.environ["TELEGRAM_CHAT_ID"],
             mission_tag=workspace.mission_tag,
-            artifacts=artifacts,
-            state=state,
-            commands=commands,
-            registry=registry,
+            artifacts=services.artifacts,
+            state=services.state,
+            commands=runtime.commands,
+            registry=runtime.registry,
         ).start()
-    StdinListener(commands).start_if_tty()
+    StdinListener(runtime.commands).start_if_tty()
     if args.web:
         web = MissionWebServer(
-            workspace.harness_dir, workspace.mission_tag, port=args.web_port, commands=commands
+            workspace.harness_dir,
+            workspace.mission_tag,
+            port=args.web_port,
+            commands=runtime.commands,
         )
-        logger.log(f"web server: {web.start()}")
-    result = MissionOrchestrator(services, context).run()
+        services.logger.log(f"web server: {web.start()}")
+    result = MissionOrchestrator(runtime.services, runtime.context).run()
     return 0 if result.block is None else 2
 
 
@@ -177,4 +111,3 @@ def _install_signal_handlers(commands: QueueCommandBus) -> None:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

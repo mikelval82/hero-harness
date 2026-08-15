@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
@@ -18,6 +19,28 @@ from mission_orchestrator.ports.tool_registry import ToolEnvironment
 
 
 class FilesystemAndToolsTest(unittest.TestCase):
+    def test_artifact_store_retries_transient_windows_replace_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FilesystemArtifactStore(Path(tmp))
+            real_replace = __import__("os").replace
+            attempts = 0
+
+            def transient_replace(source, target):  # noqa: ANN001
+                nonlocal attempts
+                attempts += 1
+                if attempts == 1:
+                    raise PermissionError(5, "Access denied")
+                return real_replace(source, target)
+
+            with patch(
+                "mission_orchestrator.adapters.filesystem.artifact_store.os.replace",
+                side_effect=transient_replace,
+            ):
+                store.write_text("tasks.json", "[]")
+
+            self.assertEqual(store.read_text("tasks.json"), "[]")
+            self.assertEqual(attempts, 2)
+
     def test_artifact_store_blocks_escape_and_task_repo_roundtrips(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = FilesystemArtifactStore(Path(tmp))

@@ -41,7 +41,7 @@ def task_pipeline_for(task: Task, mode: MissionMode) -> TaskPipeline:
     if mode == MissionMode.PLAN:
         return TaskPipeline((PhaseName.SPEC, PhaseName.PLAN))
     if task.complexity == TaskComplexity.S:
-        return TaskPipeline((PhaseName.IMPLEMENT,))
+        return TaskPipeline((PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT))
     if task.complexity == TaskComplexity.M:
         return TaskPipeline((PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT, PhaseName.REVIEW))
     if task.complexity == TaskComplexity.L:

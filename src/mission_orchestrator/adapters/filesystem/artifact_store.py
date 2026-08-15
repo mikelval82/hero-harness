@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import os
+import time
+import uuid
 from pathlib import Path
+
+
+REPLACE_ATTEMPTS = 5
 
 
 class FilesystemArtifactStore:
@@ -23,9 +28,20 @@ class FilesystemArtifactStore:
     def write_text(self, name: str, content: str) -> None:
         path = self.path_for(name)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.tmp")
-        tmp.write_text(content, encoding="utf-8")
-        os.replace(tmp, path)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(content, encoding="utf-8")
+            for attempt in range(REPLACE_ATTEMPTS):
+                try:
+                    os.replace(tmp, path)
+                    return
+                except PermissionError:
+                    if attempt == REPLACE_ATTEMPTS - 1:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+        finally:
+            if tmp.exists():
+                tmp.unlink()
 
     def append_text(self, name: str, content: str) -> None:
         path = self.path_for(name)

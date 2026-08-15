@@ -10,6 +10,7 @@ class BlockKind(Enum):
     TIMEOUT = "timeout"
     MAX_TURNS = "max_turns"
     API_RETRIES = "api_retries"
+    USAGE_LIMIT = "usage_limit"
     GATE_FAIL = "gate_fail"
     USER_REJECTED = "user_rejected"
     STRUCTURE = "structure"

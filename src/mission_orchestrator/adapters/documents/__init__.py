@@ -1,0 +1,1 @@
+"""Persistent mission document adapters."""

@@ -29,6 +29,10 @@ class DomainContractsTest(unittest.TestCase):
             task_pipeline_for(Task("T-2", "small", TaskComplexity.S), MissionMode.PLAN).phases,
             (PhaseName.SPEC, PhaseName.PLAN),
         )
+        self.assertEqual(
+            task_pipeline_for(Task("T-3", "small", TaskComplexity.S), MissionMode.FULL).phases,
+            (PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT),
+        )
 
     def test_block_reason_and_commands(self) -> None:
         block = BlockReason(BlockKind.GATE_FAIL, "spec", "missing marker")

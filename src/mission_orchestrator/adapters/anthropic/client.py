@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import random
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import monotonic
 
-from mission_orchestrator.application.errors import MaxRetriesExceeded, MaxTurnsExceeded, PhaseTimeout
+from mission_orchestrator.application.errors import (
+    ApiUsageLimitExceeded,
+    MaxRetriesExceeded,
+    MaxTurnsExceeded,
+    PhaseTimeout,
+)
 from mission_orchestrator.domain.command import CommandKind
+from mission_orchestrator.domain.conversation import ConversationRole
 from mission_orchestrator.domain.phase import PhaseResult
 from mission_orchestrator.ports.agent_client import AgentRequest, ConversationRequest
 from mission_orchestrator.ports.command_bus import CommandBus
+from mission_orchestrator.ports.conversation import ConversationLog, NullConversationLog
+from mission_orchestrator.ports.events import EventPublisher, NullEventPublisher
 from mission_orchestrator.ports.tool_registry import ToolEnvironment, ToolRegistry
 
 
@@ -24,6 +32,8 @@ class AnthropicAgentClient:
     model: str = "claude-opus-4-6"
     max_tokens: int = 16_384
     max_retries: int = 3
+    conversation: ConversationLog = field(default_factory=NullConversationLog)
+    events: EventPublisher = field(default_factory=NullEventPublisher)
 
     def __post_init__(self) -> None:
         try:
@@ -49,10 +59,29 @@ class AnthropicAgentClient:
         for turn in range(1, request.max_turns + 1):
             if monotonic() - started > request.timeout_seconds:
                 raise PhaseTimeout("phase timed out", self._metrics(last_text, turn, started, input_tokens, output_tokens))
-            response = self._create_with_retries(request, messages)
+            try:
+                response = self._create_with_retries(request, messages)
+            except Exception as exc:
+                if self._is_usage_limit(exc):
+                    raise ApiUsageLimitExceeded(
+                        str(exc),
+                        self._metrics(last_text, turn - 1, started, input_tokens, output_tokens),
+                    ) from exc
+                raise
             usage = getattr(response, "usage", None)
             input_tokens += int(getattr(usage, "input_tokens", 0) or 0)
             output_tokens += int(getattr(usage, "output_tokens", 0) or 0)
+            self.events.publish(
+                "agent_progress",
+                {
+                    "phase": request.phase_name,
+                    "turn": turn,
+                    "max_turns": request.max_turns,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "elapsed_seconds": round(monotonic() - started, 3),
+                },
+            )
             assistant_content, tool_calls, text = self._normalize_content(response.content)
             last_text = text or last_text
             if tool_calls:
@@ -79,9 +108,13 @@ class AnthropicAgentClient:
                 continue
             if not interactive:
                 return self._metrics(last_text, turn, started, input_tokens, output_tokens)
+            if text:
+                self._record_message(ConversationRole.AGENT, text, request.phase_name)
             human = self._human_reply(last_text)
             if human is None:
+                self.events.publish("conversation_closed", {"phase": request.phase_name})
                 return self._metrics(last_text, turn, started, input_tokens, output_tokens)
+            self._record_message(ConversationRole.HUMAN, human, request.phase_name)
             messages.append({"role": "assistant", "content": assistant_content})
             messages.append({"role": "user", "content": human})
         raise MaxTurnsExceeded(
@@ -116,6 +149,11 @@ class AnthropicAgentClient:
         if isinstance(status, int):
             return status >= 500
         return "internalserver" in name
+
+    @staticmethod
+    def _is_usage_limit(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "usage limit" in message or "usage limits" in message
 
     @staticmethod
     def _normalize_content(content) -> tuple[list[dict], list[dict], str]:
@@ -153,6 +191,10 @@ class AnthropicAgentClient:
             if command.kind == CommandKind.ABORT:
                 return None
             self.command_bus.defer([command])
+
+    def _record_message(self, role: ConversationRole, content: str, phase: str) -> None:
+        message = self.conversation.append(role, content, phase=phase)
+        self.events.publish("conversation_message", message.to_json())
 
     @staticmethod
     def _metrics(

@@ -20,3 +20,7 @@ class MaxTurnsExceeded(AgentLoopError):
 class MaxRetriesExceeded(AgentLoopError):
     pass
 
+
+class ApiUsageLimitExceeded(AgentLoopError):
+    pass
+

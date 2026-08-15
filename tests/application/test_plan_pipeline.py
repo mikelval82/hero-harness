@@ -141,6 +141,17 @@ class MappedFakeAgent:
                     ]
                 ),
             )
+        elif phase == "spec":
+            self.artifacts.write_text(
+                "spec.md",
+                "# Spec\n\n## Objective\nCreate cache\n\n## Expected Behavior\nCache exists\n\n**STATUS: DONE**\n",
+            )
+        elif phase == "plan":
+            self.artifacts.write_text(
+                "plan.md",
+                "# Plan\n\n## Implementation\nCreate cache\n\n**STATUS: DONE**\n",
+            )
+            self.artifacts.write_text("decisions.md", "# Decisions\n")
         elif phase == "implement":
             self.artifacts.write_text("status.md", "# Status\n\n## Files\n- ok.py\n\n**STATUS: DONE**\n")
         elif phase in {"report", "report_plan"}:

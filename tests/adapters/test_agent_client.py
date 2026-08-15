@@ -11,6 +11,7 @@ import unittest
 from types import SimpleNamespace
 
 from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
+from mission_orchestrator.application.errors import ApiUsageLimitExceeded
 from mission_orchestrator.ports.agent_client import AgentRequest
 
 
@@ -36,6 +37,11 @@ class _FakeMessages:
         return self._responses.pop(0)
 
 
+class _FailingMessages:
+    def create(self, **kwargs) -> SimpleNamespace:
+        raise RuntimeError("You have reached your specified API usage limits")
+
+
 class _FakeRegistry:
     def __init__(self, error: Exception) -> None:
         self._error = error
@@ -52,6 +58,7 @@ def _make_client(responses: list, registry) -> AnthropicAgentClient:
     client.model = "test-model"
     client.max_tokens = 128
     client.max_retries = 1
+    client.events = SimpleNamespace(published=[], publish=lambda kind, payload: client.events.published.append((kind, payload)))
     client._client = SimpleNamespace(messages=_FakeMessages(responses))
     return client
 
@@ -69,6 +76,16 @@ def _request() -> AgentRequest:
 
 
 class ToolErrorHandlingTest(unittest.TestCase):
+    def test_usage_limit_preserves_accumulated_metrics(self) -> None:
+        client = _make_client([], _FakeRegistry(KeyError("unused")))
+        client._client = SimpleNamespace(messages=_FailingMessages())
+
+        with self.assertRaises(ApiUsageLimitExceeded) as raised:
+            client.run_phase(_request())
+
+        self.assertEqual(raised.exception.metrics.turns, 0)
+        self.assertEqual(raised.exception.metrics.input_tokens, 0)
+
     def test_tool_exception_is_returned_as_error_result(self) -> None:
         responses = [
             SimpleNamespace(
@@ -87,6 +104,10 @@ class ToolErrorHandlingTest(unittest.TestCase):
 
         self.assertEqual(result.text, "recovered")
         self.assertEqual(result.turns, 2)
+        progress = [payload for kind, payload in client.events.published if kind == "agent_progress"]
+        self.assertEqual(progress[-1]["turn"], 2)
+        self.assertEqual(progress[-1]["input_tokens"], 2)
+        self.assertEqual(progress[-1]["output_tokens"], 2)
         second_call = client._client.messages.calls[1]
         tool_results = second_call["messages"][-1]["content"]
         self.assertEqual(len(tool_results), 1)

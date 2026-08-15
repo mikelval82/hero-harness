@@ -115,7 +115,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "review-prompt.md",
         "audit.md",
         REVIEW_TOOLS,
-        30,
+        50,
         1200,
         {"SPEC": "spec.md", "PLAN": "plan.md", "DECISIONS": "decisions.md", "GRAPH_INSTRUCTIONS": GRAPH},
     ),

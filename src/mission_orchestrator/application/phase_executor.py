@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Mapping
 
-from mission_orchestrator.application.errors import MaxRetriesExceeded, MaxTurnsExceeded, PhaseTimeout
+from mission_orchestrator.application.errors import (
+    ApiUsageLimitExceeded,
+    MaxRetriesExceeded,
+    MaxTurnsExceeded,
+    PhaseTimeout,
+)
 from mission_orchestrator.application.phase_registry import GRAPH, get_phase_config
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.block import BlockKind, BlockReason
@@ -42,7 +47,10 @@ class PhaseExecutor:
     ) -> PhaseExecution:
         config = get_phase_config(phase)
         self.services.logger.log(f"phase start: {phase.value}")
-        self.services.events.publish("phase_started", {"phase": phase.value, "mode": self.context.mode.value})
+        self.services.events.publish(
+            "phase_started",
+            {"phase": phase.value, "mode": self.context.mode.value, "max_turns": config.max_turns},
+        )
         self.services.state.update_phase(
             MissionSnapshot(
                 phase=phase.value,
@@ -78,11 +86,13 @@ class PhaseExecutor:
             else:
                 result = self.services.agent.run_phase(request)
         except PhaseTimeout as exc:
-            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.TIMEOUT, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.TIMEOUT, str(exc), exc.metrics))
         except MaxTurnsExceeded as exc:
-            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.MAX_TURNS, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.MAX_TURNS, str(exc), exc.metrics))
         except MaxRetriesExceeded as exc:
-            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.API_RETRIES, str(exc)))
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.API_RETRIES, str(exc), exc.metrics))
+        except ApiUsageLimitExceeded as exc:
+            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.USAGE_LIMIT, str(exc), exc.metrics))
         except Exception as exc:
             return PhaseExecution(None, self._blocked(phase, BlockKind.API_RETRIES, str(exc)))
 
@@ -98,7 +108,7 @@ class PhaseExecutor:
         if evaluate_gate and config.gate_artifact:
             gate = self.services.gates.evaluate(phase.value, config.gate_artifact)
             if not gate.passed:
-                return PhaseExecution(result, self._blocked(phase, BlockKind.GATE_FAIL, gate.detail))
+                return PhaseExecution(result, self._blocked(phase, BlockKind.GATE_FAIL, gate.detail, result))
         self.services.logger.log(f"phase done: {phase.value}")
         self.services.events.publish(
             "phase_ended",
@@ -113,10 +123,31 @@ class PhaseExecutor:
         )
         return PhaseExecution(result, None)
 
-    def _blocked(self, phase: PhaseName, kind: BlockKind, detail: str) -> BlockReason:
+    def _blocked(
+        self,
+        phase: PhaseName,
+        kind: BlockKind,
+        detail: str,
+        metrics: PhaseResult | None = None,
+    ) -> BlockReason:
+        payload = {
+            "phase": phase.value,
+            "outcome": "blocked",
+            "block_kind": kind.value,
+            "detail": detail,
+        }
+        if metrics is not None:
+            payload.update(
+                {
+                    "turns": metrics.turns,
+                    "input_tokens": metrics.input_tokens,
+                    "output_tokens": metrics.output_tokens,
+                    "elapsed_seconds": metrics.elapsed_seconds,
+                }
+            )
         self.services.events.publish(
             "phase_ended",
-            {"phase": phase.value, "outcome": "blocked", "block_kind": kind.value, "detail": detail},
+            payload,
         )
         return BlockReason(kind, phase.value, detail)
 
