@@ -38,6 +38,10 @@ class SubprocessGitService:
     def current_commit(self) -> str:
         return self._run(["git", "rev-parse", "HEAD"]).stdout.strip()
 
+    def changed_files(self) -> list[str]:
+        lines = self._run(["git", "status", "--porcelain", "--untracked-files=all"]).stdout.splitlines()
+        return sorted({line[3:].strip().replace("\\", "/") for line in lines if len(line) > 3})
+
     def stage_files(self, files: list[Path]) -> None:
         if not files:
             return

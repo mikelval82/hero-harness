@@ -27,6 +27,7 @@ def openapi_document() -> dict[str, object]:
             {"name": "Documents", "description": "Versioned mission documents"},
             {"name": "Design", "description": "Editable design map"},
             {"name": "Conversation", "description": "Interactive conversation"},
+            {"name": "Contracts", "description": "Pinned task contracts and execution leases"},
         ],
         "security": [{"bearerAuth": []}],
         "paths": {
@@ -42,6 +43,34 @@ def openapi_document() -> dict[str, object]:
             "/events": {"get": _read_operation("Mission events", "missionEvents", "Mission")},
             "/messages": {
                 "get": _read_operation("Conversation transcript", "conversationMessages", "Conversation")
+            },
+            "/contracts/tasks": {
+                "get": _read_operation("List contract tasks", "contractTasks", "Contracts")
+            },
+            "/contracts/tasks/{task_id}": {
+                "get": _read_operation(
+                    "Read pinned task contract",
+                    "contractTask",
+                    "Contracts",
+                    parameters=[_path_parameter("task_id")],
+                )
+            },
+            "/contracts/executions": {
+                "post": _write_operation(
+                    "Begin contract execution",
+                    "beginContractExecution",
+                    "Contracts",
+                    command_response,
+                )
+            },
+            "/contracts/executions/{execution_id}/{action}": {
+                "post": _write_operation(
+                    "Validate, complete, block, or amend contract execution",
+                    "updateContractExecution",
+                    "Contracts",
+                    command_response,
+                    parameters=[_path_parameter("execution_id"), _path_parameter("action")],
+                )
             },
             "/design": {"get": _read_operation("Design snapshot", "designSnapshot", "Design")},
             "/design/operations": {

@@ -17,6 +17,7 @@ from mission_orchestrator.application.document_service import MissionDocumentSer
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
 from mission_orchestrator.application.preparation_coordinator import PreparationCoordinator
 from mission_orchestrator.domain.mission import MissionMode
+from mission_orchestrator.domain.task import Task
 from tests.application.test_orchestrator import FakeAgent, make_services
 
 
@@ -53,6 +54,21 @@ class ControlHttpServerTest(unittest.TestCase):
             server = ControlHttpServer(control, token="test-token")
             server.start()
             self.addCleanup(server.stop)
+            services.tasks.save([Task("T-1", "Contract task")])
+            services.artifacts.write_text(
+                "task-contracts/snap-1/T-1.json",
+                json.dumps({"snapshot_id": "snap-1", "task": {"id": "T-1"}}),
+            )
+            services.artifacts.write_text(
+                "task-contracts/index.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "snapshot_id": "snap-1",
+                        "contracts": {"T-1": "task-contracts/snap-1/T-1.json"},
+                    }
+                ),
+            )
 
             with self.assertRaises(HTTPError) as unauthorized:
                 urlopen(f"{server.base_url}/api/v1/snapshot")
@@ -65,7 +81,12 @@ class ControlHttpServerTest(unittest.TestCase):
             capabilities = self._request(server, "/api/v1/capabilities")
             self.assertEqual(contract["openapi"], "3.0.3")
             self.assertIn("/documents/{logical_id}", contract["paths"])
+            self.assertIn("/contracts/tasks", contract["paths"])
             self.assertTrue(capabilities["features"]["versioned_documents"])
+            contract_tasks = self._request(server, "/api/v1/contracts/tasks")
+            contract_task = self._request(server, "/api/v1/contracts/tasks/T-1")
+            self.assertEqual(contract_tasks["tasks"][0]["id"], "T-1")
+            self.assertEqual(contract_task["contract"]["snapshot_id"], "snap-1")
 
             logical_id = quote("mission/idea", safe="")
             saved = self._request(

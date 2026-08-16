@@ -12,6 +12,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from mission_orchestrator.adapters.control.openapi import openapi_document
 from mission_orchestrator.application.control_plane import MissionControlPlane
+from mission_orchestrator.application.contract_execution import (
+    ExecutionConflictError,
+    ExecutionValidationError,
+)
 from mission_orchestrator.application.preparation_coordinator import InvalidSessionAction
 from mission_orchestrator.domain.design import ApplyStatus
 from mission_orchestrator.domain.document import DocumentSaveStatus
@@ -208,6 +212,11 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     query = parse_qs(parsed.query)
                     after = _integer_query(query, "after", 0)
                     self._json(server.control.messages(after_sequence=after))
+                elif parsed.path == f"{API_PREFIX}/contracts/tasks":
+                    self._json(server.control.contract_tasks())
+                elif parsed.path.startswith(f"{API_PREFIX}/contracts/tasks/"):
+                    task_id = unquote(parsed.path.removeprefix(f"{API_PREFIX}/contracts/tasks/"))
+                    self._json(server.control.contract_task(task_id))
                 elif parsed.path.startswith(f"{API_PREFIX}/documents/"):
                     logical_id = _document_id(parsed.path)
                     query = parse_qs(parsed.query)
@@ -266,6 +275,28 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     action = unquote(parsed.path.removeprefix(f"{API_PREFIX}/actions/"))
                     operation = server.actions.submit(action, body)
                     self._json(operation, HTTPStatus.ACCEPTED)
+                elif parsed.path == f"{API_PREFIX}/contracts/executions":
+                    self._json(
+                        server.control.begin_contract_execution(
+                            task_id=str(body.get("task_id", "")),
+                            actor=str(body.get("actor", "")),
+                        ),
+                        HTTPStatus.CREATED,
+                    )
+                elif parsed.path.startswith(f"{API_PREFIX}/contracts/executions/"):
+                    execution_id, action = _execution_action(parsed.path)
+                    detail = str(body.get("detail", ""))
+                    if action == "validate":
+                        payload = server.control.validate_contract_execution(execution_id)
+                    elif action == "complete":
+                        payload = server.control.complete_contract_execution(execution_id)
+                    elif action == "blocker":
+                        payload = server.control.report_contract_blocker(execution_id, detail)
+                    elif action == "amendment":
+                        payload = server.control.propose_contract_amendment(execution_id, detail)
+                    else:
+                        raise ValueError(f"unknown contract execution action: {action}")
+                    self._json(payload)
                 elif parsed.path == f"{API_PREFIX}/design/operations":
                     operations = body.get("operations")
                     if not isinstance(operations, list):
@@ -291,6 +322,14 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     "another operation is still running",
                     HTTPStatus.CONFLICT,
                     details={"operation_id": error.operation_id},
+                )
+            except ExecutionConflictError as error:
+                self._problem("execution_conflict", str(error), HTTPStatus.CONFLICT)
+            except ExecutionValidationError as error:
+                self._problem(
+                    "contract_validation_failed",
+                    str(error),
+                    HTTPStatus.UNPROCESSABLE_ENTITY,
                 )
             except SessionConflictError as error:
                 self._problem(
@@ -387,6 +426,14 @@ def _document_id(path: str) -> str:
     if not logical_id:
         raise ValueError("logical document id is required")
     return logical_id
+
+
+def _execution_action(path: str) -> tuple[str, str]:
+    suffix = path.removeprefix(f"{API_PREFIX}/contracts/executions/")
+    parts = suffix.split("/")
+    if len(parts) != 2 or not all(parts):
+        raise ValueError("contract execution path must contain an execution id and action")
+    return unquote(parts[0]), unquote(parts[1])
 
 
 def _required_integer(body: dict, key: str) -> int:

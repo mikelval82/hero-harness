@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.design.store import DesignStore
+from mission_orchestrator.application.contract_execution import ContractExecutionService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
 from mission_orchestrator.application.preparation_coordinator import PreparationCoordinator, PreparationResult
@@ -30,6 +31,7 @@ class MissionControlPlane:
     preparation: PreparationCoordinator
     tasks: InteractiveTaskCoordinator
     conversation: ConversationLog = field(default_factory=NullConversationLog)
+    executions: ContractExecutionService | None = None
 
     def capabilities(self) -> dict[str, object]:
         return {
@@ -51,6 +53,7 @@ class MissionControlPlane:
                 "long_poll_events": True,
                 "interactive_task_gates": True,
                 "safe_design_amendments": True,
+                "contract_execution": True,
             },
             "event_wait_seconds": 30,
         }
@@ -79,7 +82,35 @@ class MissionControlPlane:
                 "observed_revision": facts.observed_revision() if facts is not None else 0,
                 "approved_snapshot_id": session.approved_snapshot_id,
             },
+            "contract_execution": self._execution_service().current_execution(),
         }
+
+    def contract_tasks(self) -> dict[str, object]:
+        return self._execution_service().list_tasks()
+
+    def contract_task(self, task_id: str) -> dict[str, object]:
+        return self._execution_service().get_task(task_id)
+
+    def begin_contract_execution(self, *, task_id: str, actor: str) -> dict[str, object]:
+        return self._execution_service().begin(task_id=task_id, actor=actor)
+
+    def validate_contract_execution(self, execution_id: str) -> dict[str, object]:
+        return self._execution_service().validate(execution_id)
+
+    def complete_contract_execution(self, execution_id: str) -> dict[str, object]:
+        return self._execution_service().complete(execution_id)
+
+    def report_contract_blocker(self, execution_id: str, detail: str) -> dict[str, object]:
+        return self._execution_service().report_blocker(execution_id, detail)
+
+    def propose_contract_amendment(self, execution_id: str, detail: str) -> dict[str, object]:
+        result = self._execution_service().propose_amendment(execution_id, detail)
+        current = self.sessions.load(self.context.mission_tag)
+        preparation = self.preparation.request_amendment(
+            expected_session_revision=current.revision,
+            reason=detail,
+        )
+        return result | {"session": preparation.session.to_json()}
 
     def document(self, logical_id: str, revision: int | None = None) -> dict[str, object] | None:
         document = self.catalog.get(logical_id, revision)
@@ -212,6 +243,13 @@ class MissionControlPlane:
         path = self.context.harness_dir / "code_graph.db"
         return SQLiteCodeGraph(path) if path.exists() else None
 
+    def _execution_service(self) -> ContractExecutionService:
+        return self.executions or ContractExecutionService(
+            services=self.services,
+            context=self.context,
+            sessions=self.sessions,
+        )
+
     def _record_design_amendment(self, design_revision: int) -> str:
         current = self.sessions.load(self.context.mission_tag)
         if current.stage in {MissionStage.EXECUTING, MissionStage.RECONCILING}:
@@ -310,4 +348,9 @@ def control_plane_for(runtime) -> MissionControlPlane:  # noqa: ANN001
             documents=documents,
         ),
         conversation=SqliteConversationLog(runtime.context.harness_dir / "conversation.db"),
+        executions=ContractExecutionService(
+            services=runtime.services,
+            context=runtime.context,
+            sessions=sessions,
+        ),
     )

@@ -118,6 +118,9 @@ class FakeGit:
     def current_commit(self) -> str:
         return "test-head"
 
+    def changed_files(self) -> list[str]:
+        return []
+
     def stage_files(self, files: list[Path]) -> None:
         self.staged.extend(files)
 
