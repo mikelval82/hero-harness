@@ -13,8 +13,8 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | CDE-005 | D003, D007, D014 | `0a4aa0b`: immutable snapshot-scoped slices and active alias | CDE-A06 plus Mission pipeline assertion | WorkPlan UI pending | Verified |
 | CDE-006 | D005, D012, D014 | `0a4aa0b`: one alias included by all six contractual phases | CDE-A07 plus prompt obligations | N/A | Verified |
 | CDE-007 | D005-D007, D011, D015 | `7fc61c1`: AST declaration/signature/docstring/relationship verifier; classic and interactive completion gate | CDE-A08, CDE-A09 plus required-unverifiable merge gate | Materialization UI pending | Verified |
-| CDE-008 | D008, D012 | Pending | CDE-A10 | Ownership UI pending | Specified |
-| CDE-009 | D003, D009, D012 | Pending | Protocol tests | CDE-A11 | Specified |
+| CDE-008 | D008, D012, D016 | `05bb7a6`: persisted execution history and exclusive active lease | CDE-A10 plus completion, validation, and blocker tests | Ownership UI pending; Mission/Chat actor wiring pending | Implemented |
+| CDE-009 | D003, D009, D012, D016 | `05bb7a6` HARNESS authority; `hero-graph-lab@98025eb` typed MCP adapter | Real MCP initialize/list/call protocol test with simulated HARNESS worker | Live-worker CDE-A11 pending | Tested |
 | CDE-010 | D008, D010, D012 | Pending | Authorization/tool tests | CDE-A12, CDE-A13 | Specified |
 | CDE-011 | D006, D011 | Pending | Preview/state tests | CDE-A15 | Specified |
 | CDE-012 | D001, D008 | Existing amendment flow to extend | CDE-A14 | Amendment UI pending | Specified |
@@ -37,6 +37,7 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | 2026-08-15 | `8f92595` | Contract schema, brief boundary and composite approval | 162 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend; rendered UI pending |
 | 2026-08-15 | `0a4aa0b` | Lossless ChangeSet and immutable task contract slices | 168 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend and Mission pipeline; rendered UI pending |
 | 2026-08-15 | `7fc61c1` | Python AST verification and Mission completion enforcement | 174 `unittest` tests; changed Python files pass Ruff; `git diff --check` clean | Verified backend in classic and interactive coordinators; materialization UI pending |
+| 2026-08-22 | `05bb7a6`, `hero-graph-lab@98025eb` | Contract execution authority and MCP tools | Fresh run: HARNESS 179 tests; Graph Lab 35 tests; MCP protocol calls contract read and begin against simulated worker | Live HARNESS worker and rendered ownership state pending |
 
 ## Verification policy
 

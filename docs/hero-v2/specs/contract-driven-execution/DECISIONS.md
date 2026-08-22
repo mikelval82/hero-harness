@@ -132,3 +132,13 @@ interactive Mission routes call the same verifier before marking a task
 complete. Failures are written with node-and-field evidence to
 `contract-verification.json` and block completion; advisory relationships do
 not block.
+
+## CDE-D016 - Keep MCP execution state in HARNESS
+
+Date: 2026-08-22
+
+HARNESS owns the persisted execution history, active-lease conflict check,
+contract validation, task completion, blocker, and amendment transitions.
+Graph Lab contributes only typed MCP tools and forwards them to the active
+HARNESS worker, always pinning external calls to actor `mcp`. This preserves one
+authority and does not expose a generic shell or filesystem mutation tool.
