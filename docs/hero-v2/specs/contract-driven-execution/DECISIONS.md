@@ -142,3 +142,35 @@ contract validation, task completion, blocker, and amendment transitions.
 Graph Lab contributes only typed MCP tools and forwards them to the active
 HARNESS worker, always pinning external calls to actor `mcp`. This preserves one
 authority and does not expose a generic shell or filesystem mutation tool.
+
+## CDE-D017 - Chat writes use optimistic bounded patches
+
+Date: 2026-08-22
+
+Chat may read and patch only exact `target_path` values present in the leased
+task contract. Every patch is a unique search/replace guarded by the SHA-256
+returned by the preceding contract read. HARNESS performs containment, size,
+UTF-8, lease, and compare-and-swap checks and atomically replaces the file.
+Whole-file model writes, inferred paths, and model-selected shell commands are
+not authorized.
+
+## CDE-D018 - Mission owns workflow; contract service owns evidence
+
+Date: 2026-08-22
+
+Interactive Mission acquires the same execution lease as Chat and MCP, but its
+coordinator remains the sole owner of task and session transitions. On terminal
+success the contract service re-runs the common verifier and closes the lease
+without duplicating workflow state changes. Blocks and amendments close the
+lease with their evidence. This avoids two authorities attempting to advance
+the same mission session.
+
+## CDE-D019 - Contract UI is a derived projection
+
+Date: 2026-08-22
+
+Graph Lab fetches task slices and execution state from HARNESS and derives the
+interface preview and visual states in the browser. It does not persist a UI
+copy. `materialized` requires a passing common verifier, `divergent` reflects a
+failed verifier, `proposed` means verification is pending, and advisory
+relationships retain their own badge.
