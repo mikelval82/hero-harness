@@ -174,3 +174,15 @@ interface preview and visual states in the browser. It does not persist a UI
 copy. `materialized` requires a passing common verifier, `divergent` reflects a
 failed verifier, `proposed` means verification is pending, and advisory
 relationships retain their own badge.
+
+## CDE-D020 - Execution receipts use an execution-relative Git baseline
+
+Date: 2026-08-22
+
+The execution lease records the worktree paths that were already changed when
+the lease began. Its terminal `changed_files` receipt combines the committed
+diff from `start_commit` to `HEAD` with only newly appearing worktree paths.
+This prevents pre-existing user changes from being attributed to the executor
+and prevents a committed implementation from disappearing from the receipt.
+Content-level tracking of further edits to an already-dirty baseline path is
+deferred until a demonstrated need justifies storing per-file hashes.
