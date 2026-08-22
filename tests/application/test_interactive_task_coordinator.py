@@ -10,13 +10,86 @@ from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemAr
 from mission_orchestrator.adapters.filesystem.session_store import FilesystemMissionSessionStore
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
+from mission_orchestrator.application.preparation_coordinator import PreparationResult
 from mission_orchestrator.domain.mission import MissionMode
 from mission_orchestrator.domain.session import MissionSession, MissionStage
-from mission_orchestrator.domain.task import TaskStatus
+from mission_orchestrator.domain.task import Task, TaskStatus
 from tests.application.test_orchestrator import FakeAgent, make_services
 
 
 class InteractiveTaskCoordinatorTest(unittest.TestCase):
+    def test_mission_blocker_preserves_common_verifier_evidence(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
+            root = Path(raw)
+            agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
+            services, context, _ = make_services(root, MissionMode.FOCUSED, agent=agent)
+            agent.artifacts = services.artifacts
+            services.tasks.save([Task("T-1", "Implement notifier")])
+            contract_path = "task-contracts/snap-1/T-1.json"
+            services.artifacts.write_text(
+                contract_path,
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "snapshot_id": "snap-1",
+                        "task": {"id": "T-1"},
+                        "nodes": [
+                            {
+                                "id": "notifier",
+                                "kind": "class",
+                                "target_path": "src/notifier.py",
+                                "qualified_name": "Notifier",
+                                "docstring": "Send notifications.",
+                            }
+                        ],
+                        "relationships": [],
+                    }
+                ),
+            )
+            services.artifacts.write_text(
+                "task-contracts/index.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "snapshot_id": "snap-1",
+                        "contracts": {"T-1": contract_path},
+                    }
+                ),
+            )
+            review = MissionSession(
+                context.mission_tag,
+                stage=MissionStage.TASK_REVIEW,
+                revision=8,
+                active_task_id="T-1",
+                approved_snapshot_id="snap-1",
+            )
+            services.artifacts.write_text("_session.json", json.dumps(review.to_json()))
+            sessions = FilesystemMissionSessionStore(services.artifacts)
+            coordinator = InteractiveTaskCoordinator(
+                services=services,
+                context=context,
+                sessions=sessions,
+                documents=MissionDocumentService(
+                    services.artifacts,
+                    SqliteDocumentCatalog(context.harness_dir / "documents.db"),
+                    services.events,
+                ),
+            )
+            lease = coordinator.executions.begin(task_id="T-1", actor="mission")
+            blocked = review.move_to(MissionStage.EXECUTING).move_to(
+                MissionStage.BLOCKED,
+                blocked_reason="contract verification failed",
+            )
+
+            coordinator._close_mission_execution(
+                str(lease["execution_id"]),
+                PreparationResult(blocked, detail="contract verification failed"),
+            )
+
+            execution = coordinator.executions.current_execution()
+            self.assertEqual(execution["status"], "blocked")
+            self.assertEqual(execution["verifier"]["passed"], False)
+
     def test_retry_review_does_not_repeat_implementation(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
             root = Path(raw)

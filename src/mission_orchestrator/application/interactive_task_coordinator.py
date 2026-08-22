@@ -236,6 +236,7 @@ class InteractiveTaskCoordinator:
                 result.detail or "Mission execution requested a design amendment",
             )
         elif result.session.stage is MissionStage.BLOCKED:
+            self.executions.validate(execution_id)
             self.executions.report_blocker(
                 execution_id,
                 result.detail or result.session.blocked_reason or "Mission execution blocked",

@@ -53,6 +53,7 @@ def reconcile(
     tasks: list[Task],
     observed_ids: set[str],
     observed_revision: int,
+    verified_relationships: set[tuple[str, str, str]] | None = None,
 ) -> Reconciliation:
     covering: dict[str, Task] = {}
     for task in tasks:
@@ -61,7 +62,14 @@ def reconcile(
 
     checks: list[OperationCheck] = []
     for operation in changeset.get("operations", []):
-        checks.append(_check(operation, covering.get(operation["id"]), observed_ids))
+        checks.append(
+            _check(
+                operation,
+                covering.get(operation["id"]),
+                observed_ids,
+                verified_relationships or set(),
+            )
+        )
     return Reconciliation(
         snapshot_id=str(changeset.get("snapshot_id", "")),
         observed_revision=observed_revision,
@@ -69,7 +77,12 @@ def reconcile(
     )
 
 
-def _check(operation: dict, task: Task | None, observed_ids: set[str]) -> OperationCheck:
+def _check(
+    operation: dict,
+    task: Task | None,
+    observed_ids: set[str],
+    verified_relationships: set[tuple[str, str, str]],
+) -> OperationCheck:
     operation_id = str(operation["id"])
     blocking = operation.get("verification_level") == "hard"
     if task is None:
@@ -138,6 +151,19 @@ def _check(operation: dict, task: Task | None, observed_ids: set[str]) -> Operat
             f"target still observed: {locator}",
             blocking,
         )
+    if kind == "CONNECT":
+        relationship = (
+            str(operation.get("source", "")),
+            str(operation.get("relation", "")),
+            str(operation.get("target", "")),
+        )
+        if relationship in verified_relationships:
+            return OperationCheck(
+                operation_id,
+                OperationState.MATERIALIZED,
+                "verified by the common contract verifier",
+                blocking,
+            )
     return OperationCheck(
         operation_id,
         OperationState.UNVERIFIABLE,

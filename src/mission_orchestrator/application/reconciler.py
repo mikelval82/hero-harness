@@ -20,9 +20,47 @@ class Reconciler:
         if not raw:
             return None, []
         changeset = json.loads(raw)
-        reconciliation = reconcile(changeset, tasks, self._observed_ids(), self._observed_revision())
+        reconciliation = reconcile(
+            changeset,
+            tasks,
+            self._observed_ids(),
+            self._observed_revision(),
+            self._verified_relationships(changeset),
+        )
         self.artifacts.write_text("reconciliation.json", reconciliation.to_json() + "\n")
         return reconciliation, merge_gate_reasons(reconciliation, tasks)
+
+    def _verified_relationships(self, changeset: dict) -> set[tuple[str, str, str]]:
+        raw = self.artifacts.read_text("contract-verification.json", default="")
+        if not raw:
+            return set()
+        try:
+            verification = json.loads(raw)
+        except json.JSONDecodeError:
+            return set()
+        if not isinstance(verification, dict) or not verification.get("passed"):
+            return set()
+        checks = verification.get("checks", [])
+        if not isinstance(checks, list):
+            return set()
+        verified: set[tuple[str, str, str]] = set()
+        for operation in changeset.get("operations", []):
+            if not isinstance(operation, dict) or operation.get("kind") != "CONNECT":
+                continue
+            source = str(operation.get("source", ""))
+            relation = str(operation.get("relation", ""))
+            target = str(operation.get("target", ""))
+            expected_detail = f"{source} {relation} {target}"
+            if any(
+                isinstance(check, dict)
+                and check.get("state") == "passed"
+                and check.get("node_id") == source
+                and check.get("field") == f"relationship.{relation}"
+                and check.get("detail") == expected_detail
+                for check in checks
+            ):
+                verified.add((source, relation, target))
+        return verified
 
     def _facts_graph(self):
         facts_path = self.harness_dir / "code_graph.db"

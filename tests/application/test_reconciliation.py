@@ -113,6 +113,27 @@ class ReconcileTest(unittest.TestCase):
         self.assertIs(_check_state(result, "connect:a->b:uses"), OperationState.UNVERIFIABLE)
         self.assertIs(_check_state(result, "disconnect:a->c:uses"), OperationState.UNVERIFIABLE)
 
+    def test_cde_verified_hard_relation_is_materialized(self) -> None:
+        operation = _op("connect:a->b:contains", "CONNECT")
+        operation.update(
+            {
+                "source": "a",
+                "target": "b",
+                "relation": "contains",
+                "verification_level": "hard",
+            }
+        )
+        result = reconcile(
+            _changeset(operation),
+            [_task("T-1", [operation["id"]])],
+            observed_ids=set(),
+            observed_revision=1,
+            verified_relationships={("a", "contains", "b")},
+        )
+
+        self.assertIs(_check_state(result, operation["id"]), OperationState.MATERIALIZED)
+        self.assertEqual(merge_gate_reasons(result, [_task("T-1", [operation["id"]])]), [])
+
 
 class MergeGateTest(unittest.TestCase):
     def test_d5_gate_blocks_selectively(self) -> None:
