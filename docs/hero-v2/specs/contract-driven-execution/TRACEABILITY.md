@@ -12,13 +12,13 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | CDE-004 | D005-D007, D011 | `0a4aa0b`: lossless operations, derived locators and relationship levels | CDE-A05 | N/A | Verified |
 | CDE-005 | D003, D007, D014 | `0a4aa0b`: immutable snapshot-scoped slices and active alias | CDE-A06 plus Mission pipeline assertion | WorkPlan UI pending | Verified |
 | CDE-006 | D005, D012, D014 | `0a4aa0b`: one alias included by all six contractual phases | CDE-A07 plus prompt obligations | N/A | Verified |
-| CDE-007 | D005-D007, D011, D015 | `7fc61c1`: AST declaration/signature/docstring/relationship verifier; classic and interactive completion gate | CDE-A08, CDE-A09 plus required-unverifiable merge gate | Materialization UI pending | Verified |
-| CDE-008 | D008, D012, D016, D018, D020 | `05bb7a6`: persisted execution history; `e869e62`: Mission actor integration; `b44771c`: execution-relative changed-file receipt | CDE-A10 plus Mission, Chat, MCP, completion, validation, blocker, committed-diff, and baseline-isolation tests | Playwright rendered active owner `mcp`, failed verification, and completed/unowned state; live MCP returned the corrected terminal receipt | Verified |
+| CDE-007 | D005-D007, D011, D015 | `7fc61c1`: AST declaration/signature/docstring/relationship verifier; classic and interactive completion gate | CDE-A08, CDE-A09 plus required-unverifiable merge gate | Valid and invalid structural results rendered consistently for MCP, Chat, and Mission | Verified |
+| CDE-008 | D008, D012, D016, D018, D020, D023 | `05bb7a6`: persisted execution history; `e869e62`: Mission actor integration; `b44771c`: execution-relative changed-file receipt; `a06e749`: terminal Mission validation evidence; `479839c`: clean signed-merge fallback | CDE-A10 plus Mission, Chat, MCP, completion, validation, blocker, committed-diff, baseline-isolation, Mission blocker evidence, and real Git fallback tests | Playwright rendered each actor's failed and completed/unowned states; live receipts preserve verifier and changed-file evidence | Verified |
 | CDE-009 | D003, D009, D012, D016 | `05bb7a6` HARNESS authority; `hero-graph-lab@98025eb` typed MCP adapter | Real MCP initialize/list/call protocol test with simulated HARNESS worker | CDE-A11 verified against a live worker through real MCP STDIO initialize/list/get/begin/validate/complete calls | Verified |
-| CDE-010 | D008, D010, D012, D017 | `682e1d5` bounded HARNESS file/check tools; `hero-graph-lab@4c7e112` explicit Chat Implement mode | CDE-A12 refusal before model; CDE-A13 contract toolchain; CAS/path/actor/check tests | Rendered mode validation blocked by browser plugin bootstrap | Implemented |
-| CDE-011 | D006, D011, D019 | `hero-graph-lab@03b37ff` authority-backed contract card and generated interface preview | DOM contract assertions; Graph Lab full suite | CDE-A15 verified with Playwright: `divergent`/owner `mcp`/2 failures, then `materialized`/unowned/passed; fresh graph extraction navigated to the implemented method | Verified |
+| CDE-010 | D008, D010, D012, D017, D021 | `682e1d5` bounded HARNESS file/check tools; `hero-graph-lab@4c7e112` explicit Chat Implement mode; `hero-graph-lab@f86627d` schema-governed empty patch for target creation | CDE-A12 refusal before model; CDE-A13 contract toolchain; CAS/path/actor/check/file-creation tests | Playwright drove actual Chat Implement tools for invalid and valid implementations and rendered the terminal result | Verified |
+| CDE-011 | D006, D011, D019, D022, D024 | `hero-graph-lab@03b37ff` authority-backed contract card and generated interface preview; `a06e749` verifier-backed relationship reconciliation; `hero-graph-lab@4f23582` source-aware graph cache | DOM contract assertions, relationship evidence tests, graph-cache refresh test; Graph Lab full suite | CDE-A15 verified with Playwright for MCP, Chat, and Mission; valid nodes remained navigable after a branch/source change without restarting Graph Lab | Verified |
 | CDE-012 | D001, D008 | Existing amendment flow to extend | CDE-A14 | Amendment UI pending | Specified |
-| CDE-013 | All | MCP path complete; Mission and Chat paths remain partial | Full suites plus the live MCP valid/invalid execution below | MCP path has live-worker and rendered evidence; equivalent valid/invalid Mission and Chat E2Es remain pending | Blocked |
+| CDE-013 | All | Shared contract authority exercised through Mission, real MCP STDIO, and explicit Chat Implement | HARNESS 187 tests; Graph Lab 40 tests; valid and deliberately invalid executions for all three actors | Playwright rendered both terminal states and navigated the materialized implementation; provider inference boundary documented below | Verified |
 
 ## Baseline evidence
 
@@ -42,6 +42,64 @@ Status values: `Specified`, `Tested`, `Implemented`, `Verified`, `Blocked`.
 | 2026-08-22 | `e869e62`, `hero-graph-lab@03b37ff` | Mission lease integration and derived contract UX | HARNESS 182 tests; Graph Lab 38 tests; changed files pass Ruff; diffs clean | Automated state verified; browser plugin failed before tab creation |
 | 2026-08-22 | `b44771c` | Execution-relative changed-file receipts | 9 contract-execution tests and 3 Git adapter tests passed; repeated live MCP completion reports only `src/notification_gateway.py` | Receipt bug found by E2E and corrected |
 | 2026-08-22 | Documentation commit following `b44771c` | Live MCP contract E2E and rendered CDE-A15 | HARNESS 184 tests; Graph Lab 38 tests; changed Python files pass Ruff; invalid signature rejected; corrected signature passed 19 structural checks; Playwright rendered divergent and materialized states; fresh graph navigation reached the method | MCP path verified; Mission and Chat matrix still pending |
+| 2026-08-22 | `hero-graph-lab@f86627d` | Chat can create an absent contract target through its bounded patch tool | 17 focused gateway tests; invalid Chat implementation blocked at two signature fields; corrected implementation passed and completed | Chat valid/invalid path verified in the rendered UI |
+| 2026-08-22 | `a06e749` | Mission preserves blocker verification and reconciles exact verifier-backed hard relations | 11 reconciliation tests and 5 interactive coordinator tests; invalid Mission retained two failed checks; valid Mission materialized all five operations | Mission reached the merge boundary with authoritative evidence |
+| 2026-08-22 | `479839c` | Signed merge fallback aborts the failed merge before retry | 4 Git adapter tests including a real temporary repository; final valid Mission merged to `develop` | Mission valid path completed instead of leaving `MERGE_HEAD` blocked |
+| 2026-08-22 | `hero-graph-lab@4f23582` | Cached graph follows created and changed Python sources | Graph Lab 40 tests and Ruff; live graph changed from 19 to 23 nodes after worker branch checkout without server restart | Playwright navigated the new module and exact method signature in the same server process |
+
+## Live Chat Implement E2E evidence - 2026-08-22
+
+- Isolated branches: `contract-chat-invalid-3` and `contract-chat-valid`.
+- Approved snapshot: `0c07ad207003`, design revision 1, task `T-1`.
+- Invalid execution: `de8cdbfca9344666b0363419aa4a105e`, actor `chat`.
+  The actual Chat Implement toolchain retrieved the task, acquired the lease,
+  read the target, created it through the bounded patch gateway, ran the
+  configured check, and invoked the common verifier. The deliberately wrong
+  `chat_id: int` annotation and missing return annotation produced exactly two
+  failures. Completion was refused, Chat reported the blocker, and the lease
+  was released.
+- Valid execution: `78883775d3b74ef6a8bb15cedc608e00`, actor `chat`. The
+  same tool sequence created the exact signature, passed configured checks and
+  structural verification, and completed with only
+  `src/notification_gateway.py` attributed to the execution.
+- Playwright rendered the invalid contract as `divergent`, unowned, with two
+  failed checks, and the valid contract as `materialized`, unowned, with the
+  verifier passed. The final Chat response also reported the corresponding
+  blocked or completed outcome.
+
+Boundary: a deterministic model client selected the real Chat tools and supplied
+the valid or invalid source so the test is repeatable. This verifies explicit
+authorization, tool sequencing, bounded writes, checks, lifecycle, verifier,
+and rendered state; it does not evaluate Gemini, OpenAI, or Anthropic instruction
+following.
+
+## Live Mission E2E evidence - 2026-08-22
+
+- Isolated branches: `contract-mission-invalid-fixed` and
+  `contract-mission-valid-final`.
+- Approved snapshot: `0c07ad207003`, design revision 1, task `T-1`.
+- Invalid execution: `3d578fb8f8da4792a0ff3d08f7587637`, actor `mission`.
+  The real interactive coordinator ran SPEC, PLAN, IMPLEMENT, the configured
+  check, and common verification. The deliberately wrong annotation and missing
+  return annotation blocked the task with the exact two failures preserved in
+  the execution receipt.
+- Valid execution: `60a38c4b2c8c4a1eac9a7e05489b4895`, actor `mission`.
+  The same pipeline passed verification, reconciled the module, class, method,
+  and two containment relations as materialized, completed task and session,
+  committed the source, and merged branch `contract-mission-valid-final` into
+  `develop` at `57e20c8`.
+- Playwright rendered the negative case as Mission `Blocked`, task `Failed`,
+  contract `divergent`, and verifier `2 failed`; it rendered the positive case
+  as Mission and task `Completed`, contract `materialized`, and verifier
+  `passed`. Flow navigation reached the exact method and displayed its docstring
+  and signature. The final cache test repeated that navigation after changing
+  branches without restarting the Graph Lab server.
+
+Boundary: a deterministic Mission agent produced repeatable SPEC, PLAN,
+implementation, and report outputs while the real coordinator, gates, storage,
+Git service, code-graph rebuild, reconciliation, lease, and verifier executed.
+This verifies the Mission contract machinery, not the reasoning quality of an
+external model provider.
 
 ## Live MCP E2E evidence - 2026-08-22
 

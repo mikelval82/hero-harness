@@ -186,3 +186,44 @@ This prevents pre-existing user changes from being attributed to the executor
 and prevents a committed implementation from disappearing from the receipt.
 Content-level tracking of further edits to an already-dirty baseline path is
 deferred until a demonstrated need justifies storing per-file hashes.
+
+## CDE-D021 - Patch emptiness follows the tool schema
+
+Date: 2026-08-22
+
+Chat's bounded patch gateway validates required string arguments using each
+field's declared `minLength`. An empty `old_text` is therefore valid only for a
+field whose schema permits it, where it means create an absent contract target;
+fields with `minLength: 1` remain non-empty. A blanket non-empty check was
+rejected because it made the authorized first creation of a target file
+impossible.
+
+## CDE-D022 - The common verifier can satisfy hard relationship evidence
+
+Date: 2026-08-22
+
+Reconciliation may mark a hard relationship materialized when the common
+contract verifier has passed the exact relationship, matched by operation node,
+field, and detail. This evidence is supplied explicitly to the reconciler and
+does not weaken advisory relations or convert an `UNVERIFIABLE` result into a
+pass. Re-implementing a second relationship analyzer in reconciliation was
+rejected because it would create competing authorities.
+
+## CDE-D023 - Signed merge fallback starts from a clean merge state
+
+Date: 2026-08-22
+
+When a signed merge fails because signing is unavailable, HARNESS aborts the
+incomplete merge before retrying with signing disabled. Retrying directly while
+`MERGE_HEAD` exists was rejected because Git correctly refuses it and a valid
+Mission remains falsely blocked after implementation and verification pass.
+
+## CDE-D024 - Graph cache follows source changes
+
+Date: 2026-08-22
+
+Graph Lab fingerprints the discovered Python source paths, modification times,
+and sizes before serving its cached graph. A changed fingerprint triggers a
+fresh extraction. This preserves the cache for unchanged projects while making
+files created by Chat, Mission, or MCP navigable without restarting Graph Lab;
+unconditional re-extraction on every render was unnecessary.
