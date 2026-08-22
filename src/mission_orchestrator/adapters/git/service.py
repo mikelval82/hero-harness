@@ -91,6 +91,7 @@ class SubprocessGitService:
             check=False,
         )
         if result.returncode != 0 and self._is_signing_failure(result.stderr):
+            self._run(["git", "merge", "--abort"], check=False)
             result = self._run(
                 ["git", "-c", "commit.gpgsign=false", "merge", "--no-ff", "-m", f"Merge branch '{branch}' into develop", branch],
                 check=False,

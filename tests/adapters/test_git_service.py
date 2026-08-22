@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,38 @@ class GitSigningFallbackTest(unittest.TestCase):
         (self.repo / "untracked.py").write_text("pending", encoding="utf-8")
 
         self.assertEqual(self.service.changed_files_since(start), ["committed.py"])
+
+    def test_merge_falls_back_after_signed_merge_leaves_merge_state(self) -> None:
+        self.service.ensure_develop()
+        if platform.system().lower().startswith("win"):
+            validation = self.repo / "mission-validate.cmd"
+            validation.write_text("@exit /b 0\n", encoding="utf-8")
+        else:
+            validation = self.repo / "mission-validate.sh"
+            validation.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            validation.chmod(0o755)
+        self.service.stage_files([validation])
+        self.service.final_commit("add validation", "test setup")
+        self.service.setup_branch("feature/merge-fallback")
+        self._stage_change("feature.py")
+        self.service.final_commit("add feature", "test feature")
+        _git(self.repo, "config", "commit.gpgsign", "true")
+        _git(self.repo, "config", "gpg.program", "definitely-not-a-gpg-binary")
+
+        merged = self.service.merge_to_develop("feature/merge-fallback")
+
+        self.assertTrue(merged)
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip(),
+            "develop",
+        )
+        self.assertTrue((self.repo / "feature.py").is_file())
 
 
 if __name__ == "__main__":
