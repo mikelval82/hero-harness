@@ -94,12 +94,22 @@ class ContractExecutionService:
                     f"execution lease already held by {active['execution_id']} ({active['actor']})"
                 )
             session = self.sessions.load(self.context.mission_tag)
-            if session.stage is not MissionStage.READY:
+            allowed_stages = (
+                {MissionStage.TASK_REVIEW, MissionStage.BLOCKED}
+                if actor == "mission"
+                else {MissionStage.READY}
+            )
+            if session.stage not in allowed_stages:
                 raise ExecutionConflictError(
-                    f"mission must be ready for external execution; current stage is {session.stage.value}"
+                    f"mission stage {session.stage.value} does not authorize {actor} execution"
                 )
             task = self._task(task_id)
-            if task.status is not TaskStatus.PENDING:
+            allowed_statuses = (
+                {TaskStatus.PENDING, TaskStatus.FAILED}
+                if actor == "mission"
+                else {TaskStatus.PENDING}
+            )
+            if task.status not in allowed_statuses:
                 raise ExecutionConflictError(f"task {task_id} is {task.status.value}")
             contract = self._contract(task_id)
             now = _now()
@@ -152,7 +162,12 @@ class ContractExecutionService:
             )
             return payload
 
-    def complete(self, execution_id: str) -> dict[str, object]:
+    def complete(
+        self,
+        execution_id: str,
+        *,
+        manage_workflow: bool = True,
+    ) -> dict[str, object]:
         with self._lock:
             _, pending = self._require_active(execution_id)
             if pending.get("actor") == "chat":
@@ -173,22 +188,23 @@ class ContractExecutionService:
             raise ExecutionValidationError("; ".join(failures))
         with self._lock:
             state, execution = self._require_active(execution_id)
-            tasks = self.services.tasks.load()
-            index = next(
-                (position for position, task in enumerate(tasks) if task.id == execution["task_id"]),
-                None,
-            )
-            if index is None:
-                raise ValueError(f"unknown task: {execution['task_id']}")
-            self.services.tasks.update(index, TaskStatus.COMPLETED)
-            tasks[index].status = TaskStatus.COMPLETED
-            current = self.sessions.load(self.context.mission_tag)
-            updated = (
-                current.move_to(MissionStage.COMPLETED, active_task_id="")
-                if all(task.status is TaskStatus.COMPLETED for task in tasks)
-                else current.touch()
-            )
-            self.sessions.save(updated, expected_revision=current.revision)
+            if manage_workflow:
+                tasks = self.services.tasks.load()
+                index = next(
+                    (position for position, task in enumerate(tasks) if task.id == execution["task_id"]),
+                    None,
+                )
+                if index is None:
+                    raise ValueError(f"unknown task: {execution['task_id']}")
+                self.services.tasks.update(index, TaskStatus.COMPLETED)
+                tasks[index].status = TaskStatus.COMPLETED
+                current = self.sessions.load(self.context.mission_tag)
+                updated = (
+                    current.move_to(MissionStage.COMPLETED, active_task_id="")
+                    if all(task.status is TaskStatus.COMPLETED for task in tasks)
+                    else current.touch()
+                )
+                self.sessions.save(updated, expected_revision=current.revision)
             execution.update(
                 {
                     "status": "completed",

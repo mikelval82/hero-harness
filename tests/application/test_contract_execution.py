@@ -199,6 +199,27 @@ class ContractExecutionServiceTest(unittest.TestCase):
         self.assertEqual(result, {"configured": True, "passed": True})
         self.assertEqual(self.service.current_execution()["checks"], result)
 
+    def test_mission_actor_records_lifecycle_without_owning_workflow_transition(self) -> None:
+        current = MissionSession(
+            self.context.mission_tag,
+            stage=MissionStage.TASK_REVIEW,
+            revision=8,
+            approved_snapshot_id="snap-1",
+            active_task_id="T-1",
+        )
+        self.services.artifacts.write_text("_session.json", json.dumps(current.to_json()))
+        target = self.context.project_dir / "src" / "notifier.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('class Notifier:\n    """Send notifications."""\n', encoding="utf-8")
+
+        execution = self.service.begin(task_id="T-1", actor="mission")
+        completed = self.service.complete(execution["execution_id"], manage_workflow=False)
+
+        self.assertEqual(completed["actor"], "mission")
+        self.assertEqual(completed["status"], "completed")
+        self.assertIs(self.services.tasks.load()[0].status, TaskStatus.PENDING)
+        self.assertIs(self.sessions.load(self.context.mission_tag).stage, MissionStage.TASK_REVIEW)
+
 
 if __name__ == "__main__":
     unittest.main()

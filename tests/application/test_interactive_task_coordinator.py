@@ -90,6 +90,30 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
                     ]
                 ),
             )
+            services.artifacts.write_text(
+                "task-contracts/snapshot-1/T-1.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "snapshot_id": "snapshot-1",
+                        "task": {"id": "T-1", "title": "Implement one"},
+                        "nodes": [],
+                        "relationships": [],
+                    }
+                ),
+            )
+            services.artifacts.write_text(
+                "task-contracts/index.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "snapshot_id": "snapshot-1",
+                        "contracts": {
+                            "T-1": "task-contracts/snapshot-1/T-1.json",
+                        },
+                    }
+                ),
+            )
             ready = MissionSession(
                 context.mission_tag,
                 stage=MissionStage.READY,
@@ -122,6 +146,9 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
             self.assertEqual(agent.phases, ["spec", "plan", "implement", "review", "report"])
             self.assertEqual(services.tasks.load()[0].status.value, "completed")
             self.assertTrue(git.merged)
+            execution = coordinator.executions.current_execution()
+            self.assertEqual(execution["actor"], "mission")
+            self.assertEqual(execution["status"], "completed")
             self.assertEqual(
                 {item.logical_id for item in catalog.list_latest()},
                 {
@@ -131,6 +158,8 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
                     "task/t-1/decisions",
                     "task/t-1/status",
                     "task/t-1/audit",
+                    "task/t-1/contract",
+                    "task/t-1/verification",
                 },
             )
 

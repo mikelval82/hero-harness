@@ -4,6 +4,7 @@ import threading
 
 from mission_orchestrator.application.burst_executor import BurstExecutor
 from mission_orchestrator.application.context_compactor import ContextCompactor
+from mission_orchestrator.application.contract_execution import ContractExecutionService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.phase_executor import PhaseExecutor
 from mission_orchestrator.application.pipeline_definitions import mode_should_merge, task_pipeline_for
@@ -60,6 +61,11 @@ class InteractiveTaskCoordinator:
         self.review = ReviewCoordinator(services, context, self.phases, self.compactor)
         self.bursts = BurstExecutor(self.phases)
         self.reporter = ReportService(self.phases, context)
+        self.executions = ContractExecutionService(
+            services=services,
+            context=context,
+            sessions=sessions,
+        )
         self._action_lock = threading.Lock()
 
     def prepare_next(self, *, expected_session_revision: int) -> PreparationResult:
@@ -136,30 +142,52 @@ class InteractiveTaskCoordinator:
                 )
             tasks = self.services.tasks.load()
             index, task = self._find_task(tasks, task_id)
-            self._materialize_task_contract(task.id)
-            running = current.move_to(
-                MissionStage.EXECUTING,
-                active_phase="execute",
-                active_task_id=task.id,
-            )
-            self._save(current, running)
-            for phase in task_pipeline_for(task, self.context.mode).phases:
-                if phase in PREPARATION_PHASES:
-                    continue
-                if phase is PhaseName.IMPLEMENT_BURSTS:
-                    block = self.bursts.run(task)
-                else:
-                    block = self.phases.run(
-                        phase,
-                        variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
-                    ).block
-                self.documents.capture_task_documents(task.id)
-                if block is not None:
-                    self.services.tasks.update(index, TaskStatus.FAILED, str(block))
-                    return self._block(running, str(block))
-                if self._amendment_requested():
-                    return self._pause_for_amendment(running)
-            return self._finish_execution(running, index, task)
+            execution_id = ""
+            if (
+                self.context.mode is not MissionMode.PLAN
+                and self.services.artifacts.exists(TASK_CONTRACT_INDEX)
+            ):
+                lease = self.executions.begin(task_id=task.id, actor="mission")
+                execution_id = str(lease["execution_id"])
+            try:
+                self._materialize_task_contract(task.id)
+                running = current.move_to(
+                    MissionStage.EXECUTING,
+                    active_phase="execute",
+                    active_task_id=task.id,
+                )
+                self._save(current, running)
+                for phase in task_pipeline_for(task, self.context.mode).phases:
+                    if phase in PREPARATION_PHASES:
+                        continue
+                    if phase is PhaseName.IMPLEMENT_BURSTS:
+                        block = self.bursts.run(task)
+                    else:
+                        block = self.phases.run(
+                            phase,
+                            variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                        ).block
+                    self.documents.capture_task_documents(task.id)
+                    if block is not None:
+                        self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                        if execution_id:
+                            self.executions.report_blocker(execution_id, str(block))
+                        return self._block(running, str(block))
+                    if self._amendment_requested():
+                        if execution_id:
+                            self.executions.propose_amendment(
+                                execution_id,
+                                "Mission execution requested a design amendment",
+                            )
+                        return self._pause_for_amendment(running)
+                result = self._finish_execution(running, index, task)
+                if execution_id:
+                    self._close_mission_execution(execution_id, result)
+                return result
+            except Exception as error:
+                if execution_id:
+                    self._safe_execution_blocker(execution_id, str(error))
+                raise
 
     def retry_review(self, *, expected_session_revision: int) -> PreparationResult:
         with self._action_lock:
@@ -168,6 +196,10 @@ class InteractiveTaskCoordinator:
                 raise InvalidSessionAction(current.stage, "retry_review")
             tasks = self.services.tasks.load()
             index, task = self._find_task(tasks, current.active_task_id)
+            execution_id = ""
+            if self.services.artifacts.exists(TASK_CONTRACT_INDEX):
+                lease = self.executions.begin(task_id=task.id, actor="mission")
+                execution_id = str(lease["execution_id"])
             self._materialize_task_contract(task.id)
             if task.status is not TaskStatus.FAILED:
                 raise ValueError(f"active task {task.id!r} is not failed")
@@ -185,8 +217,39 @@ class InteractiveTaskCoordinator:
             self.documents.capture_task_documents(task.id)
             if block is not None:
                 self.services.tasks.update(index, TaskStatus.FAILED, str(block))
+                if execution_id:
+                    self.executions.report_blocker(execution_id, str(block))
                 return self._block(running, str(block))
-            return self._finish_execution(running, index, task)
+            result = self._finish_execution(running, index, task)
+            if execution_id:
+                self._close_mission_execution(execution_id, result)
+            return result
+
+    def _close_mission_execution(
+        self,
+        execution_id: str,
+        result: PreparationResult,
+    ) -> None:
+        if result.session.stage is MissionStage.PAUSED:
+            self.executions.propose_amendment(
+                execution_id,
+                result.detail or "Mission execution requested a design amendment",
+            )
+        elif result.session.stage is MissionStage.BLOCKED:
+            self.executions.report_blocker(
+                execution_id,
+                result.detail or result.session.blocked_reason or "Mission execution blocked",
+            )
+        else:
+            self.executions.complete(execution_id, manage_workflow=False)
+
+    def _safe_execution_blocker(self, execution_id: str, detail: str) -> None:
+        try:
+            current = self.executions.current_execution()
+            if current and current.get("execution_id") == execution_id and current.get("status") == "active":
+                self.executions.report_blocker(execution_id, detail or "Mission execution failed")
+        except Exception:
+            return
 
     def _finish_execution(
         self,
