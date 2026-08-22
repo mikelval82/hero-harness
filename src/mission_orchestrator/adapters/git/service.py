@@ -42,6 +42,12 @@ class SubprocessGitService:
         lines = self._run(["git", "status", "--porcelain", "--untracked-files=all"]).stdout.splitlines()
         return sorted({line[3:].strip().replace("\\", "/") for line in lines if len(line) > 3})
 
+    def changed_files_since(self, commit: str) -> list[str]:
+        lines = self._run(
+            ["git", "diff", "--name-only", "--diff-filter=ACDMRTUXB", commit, "HEAD"]
+        ).stdout.splitlines()
+        return sorted({line.strip().replace("\\", "/") for line in lines if line.strip()})
+
     def stage_files(self, files: list[Path]) -> None:
         if not files:
             return

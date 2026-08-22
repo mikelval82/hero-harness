@@ -61,6 +61,14 @@ class GitSigningFallbackTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.service.final_commit("add work file", "summary")
 
+    def test_changed_files_since_reports_committed_diff_only(self) -> None:
+        start = self.service.current_commit()
+        self._stage_change("committed.py")
+        _git(self.repo, "-c", "commit.gpgsign=false", "commit", "-m", "commit work")
+        (self.repo / "untracked.py").write_text("pending", encoding="utf-8")
+
+        self.assertEqual(self.service.changed_files_since(start), ["committed.py"])
+
 
 if __name__ == "__main__":
     unittest.main()

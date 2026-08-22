@@ -105,6 +105,8 @@ class FakeGit:
     def __init__(self) -> None:
         self.merged = False
         self.staged: list[Path] = []
+        self.workspace_changes: list[str] = []
+        self.committed_changes: list[str] = []
 
     def detect_base_branch(self) -> str:
         return "main"
@@ -119,7 +121,10 @@ class FakeGit:
         return "test-head"
 
     def changed_files(self) -> list[str]:
-        return []
+        return list(self.workspace_changes)
+
+    def changed_files_since(self, commit: str) -> list[str]:
+        return list(self.committed_changes)
 
     def stage_files(self, files: list[Path]) -> None:
         self.staged.extend(files)

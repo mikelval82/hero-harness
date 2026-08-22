@@ -132,6 +132,20 @@ class ContractExecutionServiceTest(unittest.TestCase):
         self.assertIs(self.services.tasks.load()[0].status, TaskStatus.COMPLETED)
         self.assertIs(self.sessions.load(self.context.mission_tag).stage, MissionStage.COMPLETED)
 
+    def test_completion_receipt_combines_commits_and_new_workspace_changes(self) -> None:
+        target = self.context.project_dir / "src" / "notifier.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('class Notifier:\n    """Send notifications."""\n', encoding="utf-8")
+        self.services.git.workspace_changes = ["preexisting-helper.py"]
+        execution = self.service.begin(task_id="T-1", actor="mcp")
+        self.services.git.committed_changes = ["src/notifier.py"]
+        self.services.git.workspace_changes = ["preexisting-helper.py", "new-note.txt"]
+
+        completed = self.service.complete(execution["execution_id"])
+
+        self.assertEqual(completed["baseline_changed_files"], ["preexisting-helper.py"])
+        self.assertEqual(completed["changed_files"], ["new-note.txt", "src/notifier.py"])
+
     def test_completion_is_refused_when_common_verifier_fails(self) -> None:
         execution = self.service.begin(task_id="T-1", actor="mcp")
 

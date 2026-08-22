@@ -124,6 +124,7 @@ class ContractExecutionService:
                 "started_at": now,
                 "heartbeat_at": now,
                 "status": "active",
+                "baseline_changed_files": self._working_tree_files(),
                 "changed_files": [],
                 "final_commit": "",
                 "verifier": None,
@@ -205,13 +206,14 @@ class ContractExecutionService:
                     else current.touch()
                 )
                 self.sessions.save(updated, expected_revision=current.revision)
+            final_commit = self.services.git.current_commit()
             execution.update(
                 {
                     "status": "completed",
                     "heartbeat_at": _now(),
                     "ended_at": _now(),
-                    "changed_files": self._changed_files(),
-                    "final_commit": self.services.git.current_commit(),
+                    "changed_files": self._changed_files(execution),
+                    "final_commit": final_commit,
                 }
             )
             self._save_state(state)
@@ -452,9 +454,24 @@ class ContractExecutionService:
             raise ValueError("contract path resolves outside the project")
         return relative, target
 
-    def _changed_files(self) -> list[str]:
+    def _working_tree_files(self) -> list[str]:
         method = getattr(self.services.git, "changed_files", None)
         return list(method()) if callable(method) else []
+
+    def _changed_files(self, execution: dict[str, object]) -> list[str]:
+        baseline = {
+            str(path)
+            for path in execution.get("baseline_changed_files", [])
+            if isinstance(path, str)
+        }
+        working_tree_delta = set(self._working_tree_files()) - baseline
+        method = getattr(self.services.git, "changed_files_since", None)
+        committed = (
+            set(method(str(execution.get("start_commit", ""))))
+            if callable(method)
+            else set()
+        )
+        return sorted(committed | working_tree_delta)
 
 
 def _now() -> str:
