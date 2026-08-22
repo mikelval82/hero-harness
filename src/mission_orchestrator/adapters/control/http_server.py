@@ -288,6 +288,21 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     detail = str(body.get("detail", ""))
                     if action == "validate":
                         payload = server.control.validate_contract_execution(execution_id)
+                    elif action == "read-file":
+                        payload = server.control.read_contract_file(
+                            execution_id,
+                            str(body.get("path", "")),
+                        )
+                    elif action == "apply-patch":
+                        payload = server.control.apply_contract_patch(
+                            execution_id,
+                            path=str(body.get("path", "")),
+                            expected_sha256=str(body.get("expected_sha256", "")),
+                            old_text=str(body.get("old_text", "")),
+                            new_text=str(body.get("new_text", "")),
+                        )
+                    elif action == "checks":
+                        payload = server.control.run_contract_checks(execution_id)
                     elif action == "complete":
                         payload = server.control.complete_contract_execution(execution_id)
                     elif action == "blocker":

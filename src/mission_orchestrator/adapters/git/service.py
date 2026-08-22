@@ -72,6 +72,9 @@ class SubprocessGitService:
         result = subprocess.run(args, cwd=project_dir, text=True, capture_output=True, timeout=120, check=False)
         return result.returncode == 0
 
+    def target_validation_available(self, project_dir: Path) -> bool:
+        return self._validation_script(project_dir) is not None
+
     def merge_to_develop(self, branch: str) -> bool:
         if not self.run_target_validation(self.project_dir):
             return False

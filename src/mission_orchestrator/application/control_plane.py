@@ -97,6 +97,29 @@ class MissionControlPlane:
     def validate_contract_execution(self, execution_id: str) -> dict[str, object]:
         return self._execution_service().validate(execution_id)
 
+    def read_contract_file(self, execution_id: str, path: str) -> dict[str, object]:
+        return self._execution_service().read_file(execution_id, path)
+
+    def apply_contract_patch(
+        self,
+        execution_id: str,
+        *,
+        path: str,
+        expected_sha256: str,
+        old_text: str,
+        new_text: str,
+    ) -> dict[str, object]:
+        return self._execution_service().apply_patch(
+            execution_id,
+            path=path,
+            expected_sha256=expected_sha256,
+            old_text=old_text,
+            new_text=new_text,
+        )
+
+    def run_contract_checks(self, execution_id: str) -> dict[str, bool]:
+        return self._execution_service().run_checks(execution_id)
+
     def complete_contract_execution(self, execution_id: str) -> dict[str, object]:
         return self._execution_service().complete(execution_id)
 

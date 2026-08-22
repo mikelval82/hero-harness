@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -152,6 +153,51 @@ class ContractExecutionServiceTest(unittest.TestCase):
         self.assertEqual(blocked["blocker"], "Contract omits retry behavior")
         replacement = self.service.begin(task_id="T-1", actor="chat")
         self.assertNotEqual(replacement["execution_id"], execution["execution_id"])
+
+    def test_chat_patch_is_contract_scoped_and_optimistic(self) -> None:
+        target = self.context.project_dir / "src" / "notifier.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        original = 'class Notifier:\n    """Old docs."""\n'
+        target.write_text(original, encoding="utf-8")
+        execution = self.service.begin(task_id="T-1", actor="chat")
+        selected = self.service.read_file(execution["execution_id"], "src/notifier.py")
+
+        patched = self.service.apply_patch(
+            execution["execution_id"],
+            path="src/notifier.py",
+            expected_sha256=selected["sha256"],
+            old_text='    """Old docs."""',
+            new_text='    """Send notifications."""',
+        )
+
+        self.assertEqual(
+            target.read_text(encoding="utf-8"),
+            'class Notifier:\n    """Send notifications."""\n',
+        )
+        self.assertEqual(patched["path"], "src/notifier.py")
+        self.assertNotEqual(patched["sha256"], hashlib.sha256(original.encode()).hexdigest())
+        with self.assertRaisesRegex(ExecutionConflictError, "hash"):
+            self.service.apply_patch(
+                execution["execution_id"],
+                path="src/notifier.py",
+                expected_sha256=selected["sha256"],
+                old_text="class Notifier:",
+                new_text="class Changed:",
+            )
+        with self.assertRaisesRegex(ValueError, "approved contract"):
+            self.service.read_file(execution["execution_id"], "README.md")
+
+    def test_only_chat_actor_can_patch_and_checks_are_bounded(self) -> None:
+        execution = self.service.begin(task_id="T-1", actor="mcp")
+        with self.assertRaisesRegex(ExecutionConflictError, "chat"):
+            self.service.read_file(execution["execution_id"], "src/notifier.py")
+        self.service.report_blocker(execution["execution_id"], "handoff")
+        chat = self.service.begin(task_id="T-1", actor="chat")
+
+        result = self.service.run_checks(chat["execution_id"])
+
+        self.assertEqual(result, {"configured": True, "passed": True})
+        self.assertEqual(self.service.current_execution()["checks"], result)
 
 
 if __name__ == "__main__":

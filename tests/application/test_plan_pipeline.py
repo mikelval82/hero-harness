@@ -225,6 +225,12 @@ class _Git:
     def final_commit(self, task_description: str, summary: str) -> None:
         pass
 
+    def target_validation_available(self, project_dir: Path) -> bool:
+        return True
+
+    def run_target_validation(self, project_dir: Path) -> bool:
+        return True
+
     def merge_to_develop(self, branch: str) -> bool:
         return True
 

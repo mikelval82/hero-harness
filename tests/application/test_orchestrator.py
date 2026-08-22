@@ -130,6 +130,9 @@ class FakeGit:
     def run_target_validation(self, project_dir: Path) -> bool:
         return True
 
+    def target_validation_available(self, project_dir: Path) -> bool:
+        return True
+
     def merge_to_develop(self, branch: str) -> bool:
         self.merged = True
         return True

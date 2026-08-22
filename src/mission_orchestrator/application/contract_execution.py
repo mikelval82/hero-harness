@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from mission_orchestrator.application.contract_verifier import PythonContractVerifier
 from mission_orchestrator.application.services import AppServices
@@ -16,6 +19,8 @@ from mission_orchestrator.ports.session_store import MissionSessionStore
 EXECUTION_STATE = "contract-executions.json"
 CONTRACT_INDEX = "task-contracts/index.json"
 EXECUTION_ACTORS = {"mission", "chat", "mcp"}
+MAX_CONTRACT_FILE_BYTES = 500_000
+MAX_PATCH_TEXT_BYTES = 200_000
 
 
 class ExecutionConflictError(RuntimeError):
@@ -148,6 +153,16 @@ class ContractExecutionService:
             return payload
 
     def complete(self, execution_id: str) -> dict[str, object]:
+        with self._lock:
+            _, pending = self._require_active(execution_id)
+            if pending.get("actor") == "chat":
+                checks = pending.get("checks")
+                if not isinstance(checks, dict) or not checks.get("configured"):
+                    raise ExecutionValidationError(
+                        "chat execution must run the configured project checks before completion"
+                    )
+                if not checks.get("passed"):
+                    raise ExecutionValidationError("configured project checks failed")
         verification = self.validate(execution_id)
         if not verification["passed"]:
             failures = [
@@ -186,6 +201,136 @@ class ContractExecutionService:
             self._save_state(state)
             self.services.events.publish("contract_execution_completed", execution)
             return dict(execution)
+
+    def read_file(self, execution_id: str, path: str) -> dict[str, object]:
+        """Read one contract-owned UTF-8 file for an active Chat execution."""
+        with self._lock:
+            _, execution = self._require_chat(execution_id)
+            relative, target = self._contract_path(str(execution["task_id"]), path)
+            if not target.exists():
+                content = ""
+                exists = False
+            else:
+                if not target.is_file():
+                    raise ValueError(f"contract path is not a file: {relative}")
+                raw = target.read_bytes()
+                if len(raw) > MAX_CONTRACT_FILE_BYTES:
+                    raise ValueError(f"contract file is too large: {relative}")
+                try:
+                    content = raw.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise ValueError(f"contract file is not UTF-8 text: {relative}") from error
+                exists = True
+            encoded = content.encode("utf-8")
+            return {
+                "path": relative,
+                "exists": exists,
+                "sha256": hashlib.sha256(encoded).hexdigest(),
+                "content": content,
+            }
+
+    def apply_patch(
+        self,
+        execution_id: str,
+        *,
+        path: str,
+        expected_sha256: str,
+        old_text: str,
+        new_text: str,
+    ) -> dict[str, object]:
+        """Apply one unique search/replace guarded by the previously read hash."""
+        if not expected_sha256.strip():
+            raise ValueError("expected_sha256 is required")
+        if len(old_text.encode("utf-8")) > MAX_PATCH_TEXT_BYTES:
+            raise ValueError("old_text is too large")
+        if len(new_text.encode("utf-8")) > MAX_PATCH_TEXT_BYTES:
+            raise ValueError("new_text is too large")
+        with self._lock:
+            state, execution = self._require_chat(execution_id)
+            relative, target = self._contract_path(str(execution["task_id"]), path)
+            if target.exists():
+                if not target.is_file():
+                    raise ValueError(f"contract path is not a file: {relative}")
+                raw = target.read_bytes()
+                if len(raw) > MAX_CONTRACT_FILE_BYTES:
+                    raise ValueError(f"contract file is too large: {relative}")
+                try:
+                    content = raw.decode("utf-8")
+                except UnicodeDecodeError as error:
+                    raise ValueError(f"contract file is not UTF-8 text: {relative}") from error
+            else:
+                content = ""
+            actual_sha256 = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            if not _secure_equal(actual_sha256, expected_sha256.strip().lower()):
+                raise ExecutionConflictError(
+                    f"contract file hash changed for {relative}; read it again before patching"
+                )
+            if old_text:
+                occurrences = content.count(old_text)
+                if occurrences != 1:
+                    raise ExecutionConflictError(
+                        f"old_text must match exactly once in {relative}; found {occurrences}"
+                    )
+                updated = content.replace(old_text, new_text, 1)
+            else:
+                if content:
+                    raise ExecutionConflictError(
+                        "old_text may be empty only when creating an empty or missing file"
+                    )
+                updated = new_text
+            encoded = updated.encode("utf-8")
+            if len(encoded) > MAX_CONTRACT_FILE_BYTES:
+                raise ValueError(f"patched contract file is too large: {relative}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+            try:
+                temporary.write_bytes(encoded)
+                os.replace(temporary, target)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
+            result = {
+                "path": relative,
+                "sha256": hashlib.sha256(encoded).hexdigest(),
+                "bytes": len(encoded),
+            }
+            patches = execution.setdefault("patches", [])
+            if isinstance(patches, list):
+                patches.append(
+                    {
+                        "path": relative,
+                        "before_sha256": actual_sha256,
+                        "after_sha256": result["sha256"],
+                        "applied_at": _now(),
+                    }
+                )
+            execution["heartbeat_at"] = _now()
+            self._save_state(state)
+            self.services.events.publish(
+                "contract_execution_patch_applied",
+                {"execution_id": execution_id, **result},
+            )
+            return result
+
+    def run_checks(self, execution_id: str) -> dict[str, bool]:
+        """Run only the repository validation command selected by HARNESS."""
+        with self._lock:
+            state, execution = self._require_chat(execution_id)
+            configured = self.services.git.target_validation_available(self.context.project_dir)
+            passed = (
+                self.services.git.run_target_validation(self.context.project_dir)
+                if configured
+                else False
+            )
+            result = {"configured": configured, "passed": passed}
+            execution["checks"] = result
+            execution["heartbeat_at"] = _now()
+            self._save_state(state)
+            self.services.events.publish(
+                "contract_execution_checks_finished",
+                {"execution_id": execution_id, **result},
+            )
+            return result
 
     def report_blocker(self, execution_id: str, detail: str) -> dict[str, object]:
         if not detail.strip():
@@ -263,6 +408,34 @@ class ContractExecutionService:
             raise ExecutionConflictError(f"execution is not the active lease: {execution_id}")
         return state, active
 
+    def _require_chat(self, execution_id: str) -> tuple[dict, dict]:
+        state, execution = self._require_active(execution_id)
+        if execution.get("actor") != "chat":
+            raise ExecutionConflictError("bounded file tools require a chat execution lease")
+        return state, execution
+
+    def _contract_path(self, task_id: str, requested: str) -> tuple[str, Path]:
+        raw = requested.strip().replace("\\", "/")
+        if not raw:
+            raise ValueError("path is required")
+        path = Path(raw)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError("path must be project-relative")
+        relative = path.as_posix().lstrip("./")
+        contract = self._contract(task_id)
+        allowed = {
+            Path(str(node["target_path"])).as_posix().lstrip("./")
+            for node in contract.get("nodes", [])
+            if isinstance(node, dict) and str(node.get("target_path", "")).strip()
+        }
+        if relative not in allowed:
+            raise ValueError(f"path is outside the approved contract: {relative}")
+        project = self.context.project_dir.resolve()
+        target = (project / relative).resolve(strict=False)
+        if target != project and project not in target.parents:
+            raise ValueError("contract path resolves outside the project")
+        return relative, target
+
     def _changed_files(self) -> list[str]:
         method = getattr(self.services.git, "changed_files", None)
         return list(method()) if callable(method) else []
@@ -270,3 +443,9 @@ class ContractExecutionService:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _secure_equal(left: str, right: str) -> bool:
+    return len(left) == len(right) and hashlib.sha256(left.encode()).digest() == hashlib.sha256(
+        right.encode()
+    ).digest()

@@ -65,7 +65,7 @@ def openapi_document() -> dict[str, object]:
             },
             "/contracts/executions/{execution_id}/{action}": {
                 "post": _write_operation(
-                    "Validate, complete, block, or amend contract execution",
+                    "Read or patch contract files, run checks, validate, complete, block, or amend execution",
                     "updateContractExecution",
                     "Contracts",
                     command_response,
