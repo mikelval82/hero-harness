@@ -13,6 +13,7 @@ dependencies = []
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
+deepseek = ["openai>=1.50"]
 dev = []
 
 [project.scripts]
@@ -29,4 +30,3 @@ mission_orchestrator = ["py.typed", "adapters/web/static/*.html"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-

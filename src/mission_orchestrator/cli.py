@@ -19,7 +19,7 @@ from mission_orchestrator.domain.mission import GateMode, MissionMode
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    load_dotenv(Path.cwd() / ".env")
+    load_runtime_env(Path.cwd())
     mode = MissionMode.PLAN if args.plan_only else MissionMode(args.mode)
     task = resolve_task(args)
     branch = args.branch_opt or args.branch or sanitize(task.lower().replace(" ", "-"), max_len=60)
@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
         no_grill=args.no_grill,
         max_tasks=args.max_tasks,
         resume=args.resume,
+        provider=args.provider,
+        model=args.model,
     ))
     services = runtime.services
     workspace = runtime.workspace
@@ -74,6 +76,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--task-file")
     parser.add_argument("--branch", dest="branch_opt")
     parser.add_argument("--max-tasks", type=int, default=20)
+    parser.add_argument("--provider", choices=("anthropic", "deepseek"))
+    parser.add_argument("--model")
     parser.add_argument("--web", action="store_true")
     parser.add_argument("--web-port", type=int, default=8765)
     return parser.parse_args(argv)
@@ -96,6 +100,15 @@ def load_dotenv(path: Path) -> None:
             continue
         key, value = stripped.split("=", 1)
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def load_runtime_env(project_dir: Path) -> None:
+    project_dir = project_dir.resolve()
+    load_dotenv(project_dir / ".env")
+    load_dotenv(project_dir / ".env.local")
+    repository_root = Path(__file__).resolve().parents[2]
+    if repository_root != project_dir:
+        load_dotenv(repository_root / ".env.local")
 
 
 def _install_signal_handlers(commands: QueueCommandBus) -> None:

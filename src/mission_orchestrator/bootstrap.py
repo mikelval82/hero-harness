@@ -8,6 +8,7 @@ from mission_orchestrator.adapters.analysis.service import SQLiteCodeGraphServic
 from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
 from mission_orchestrator.adapters.command_bus import QueueCommandBus
 from mission_orchestrator.adapters.conversation.sqlite_log import SqliteConversationLog
+from mission_orchestrator.adapters.deepseek.client import DeepSeekAgentClient
 from mission_orchestrator.adapters.events.decorators import PublishingLogger, PublishingNotifier
 from mission_orchestrator.adapters.events.sqlite_log import SqliteEventLog
 from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemArtifactStore
@@ -36,6 +37,8 @@ class RuntimeConfig:
     no_grill: bool = False
     max_tasks: int = 20
     resume: bool = False
+    provider: str | None = None
+    model: str | None = None
 
 
 @dataclass(frozen=True)
@@ -74,13 +77,27 @@ def build_runtime(config: RuntimeConfig) -> MissionRuntime:
     git.setup_branch(config.branch)
     tool_registry = default_tool_registry(logger)
     conversation = SqliteConversationLog(workspace.harness_dir / "conversation.db")
-    agent = AnthropicAgentClient(
-        tool_registry,
-        ToolEnvironment(project_dir, workspace.harness_dir),
-        commands,
-        conversation=conversation,
-        events=events,
-    )
+    provider = (config.provider or os.environ.get("HARNESS_PROVIDER", "anthropic")).strip().lower()
+    model = config.model or os.environ.get("HARNESS_MODEL")
+    agent_options = {
+        "tools": tool_registry,
+        "tool_env": ToolEnvironment(project_dir, workspace.harness_dir),
+        "command_bus": commands,
+        "conversation": conversation,
+        "events": events,
+    }
+    if provider == "anthropic":
+        agent = AnthropicAgentClient(
+            **agent_options,
+            **({"model": model} if model else {}),
+        )
+    elif provider == "deepseek":
+        agent = DeepSeekAgentClient(
+            **agent_options,
+            **({"model": model} if model else {}),
+        )
+    else:
+        raise ValueError(f"unsupported HARNESS provider: {provider}")
     repo_root = Path(__file__).resolve().parents[2]
     prompts = FilesystemPromptRenderer(
         repo_root / "prompts",

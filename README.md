@@ -77,9 +77,19 @@ Para usar el script `mission`, instala el paquete en editable:
 uv pip install -e .
 ```
 
-El adapter Anthropic es opcional. Sin `anthropic` instalado o sin
-`ANTHROPIC_API_KEY`, el CLI fallara claramente al intentar ejecutar una fase que
-requiera modelo real.
+Los adapters Anthropic y DeepSeek son opcionales. Instala uno con
+`uv pip install -e ".[anthropic]"` o `uv pip install -e ".[deepseek]"`. Anthropic
+usa `ANTHROPIC_API_KEY`; DeepSeek usa `DEEPSEEK_API_KEY` y, de forma opcional,
+`DEEPSEEK_BASE_URL`. HARNESS carga `.env` y `.env.local` sin sobrescribir
+variables ya definidas.
+
+El proveedor puede seleccionarse con `--provider` o `HARNESS_PROVIDER`; el
+modelo, con `--model` o `HARNESS_MODEL`. DeepSeek usa `deepseek-v4-flash` por defecto:
+
+```powershell
+.\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo `
+    --provider deepseek --model deepseek-v4-flash
+```
 
 ## Ejecutar HARNESS con Graph Lab
 

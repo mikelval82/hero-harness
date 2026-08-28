@@ -12,6 +12,15 @@ class WorkerArgumentsTest(unittest.TestCase):
         self.assertEqual(args.host, "127.0.0.1")
         self.assertEqual(args.port, 0)
         self.assertEqual(args.mode, "full")
+        self.assertIsNone(args.provider)
+
+    def test_worker_accepts_deepseek_provider_and_model(self) -> None:
+        args = parse_args(
+            ["--project", ".", "--provider", "deepseek", "--model", "deepseek-v4-flash"]
+        )
+
+        self.assertEqual(args.provider, "deepseek")
+        self.assertEqual(args.model, "deepseek-v4-flash")
 
 
 if __name__ == "__main__":

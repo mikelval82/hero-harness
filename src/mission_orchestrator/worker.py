@@ -10,14 +10,14 @@ from mission_orchestrator.adapters.control.http_server import ControlHttpServer
 from mission_orchestrator.adapters.filesystem.workspace import sanitize
 from mission_orchestrator.application.control_plane import control_plane_for
 from mission_orchestrator.bootstrap import RuntimeConfig, build_runtime
-from mission_orchestrator.cli import load_dotenv
+from mission_orchestrator.cli import load_runtime_env
 from mission_orchestrator.domain.mission import GateMode, MissionMode
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     project_dir = Path(args.project).resolve()
-    load_dotenv(project_dir / ".env")
+    load_runtime_env(project_dir)
     task = args.task.strip() or "Graph Lab mission"
     branch = args.branch or sanitize(task.lower().replace(" ", "-"), max_len=60)
     runtime = build_runtime(
@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
             no_grill=args.no_grill,
             max_tasks=args.max_tasks,
             resume=args.resume,
+            provider=args.provider,
+            model=args.model,
         )
     )
     server = ControlHttpServer(
@@ -82,6 +84,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-grill", action="store_true")
     parser.add_argument("--max-tasks", type=int, default=20)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--provider", choices=("anthropic", "deepseek"))
+    parser.add_argument("--model")
     parser.add_argument("--host", choices=("127.0.0.1", "localhost", "::1"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--token")
