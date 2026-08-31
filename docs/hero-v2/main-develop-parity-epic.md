@@ -110,16 +110,20 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### R4 — Telegram seguro
 
-- [ ] Ownership único por token.
-- [ ] Configuración parcial rechazada.
-- [ ] Offset/backlog persistente con semántica at-most-once.
-- [ ] Lifecycle `stop()` y backoff/errores clasificados.
-- [ ] Comandos mutadores correlacionados con la interacción vigente.
-- [ ] Si no se completa, Telegram mutador queda deshabilitado.
+- [x] Ownership único por token.
+- [x] Configuración parcial rechazada.
+- [x] Offset/backlog persistente con semántica at-most-once.
+- [x] Lifecycle `stop()` y backoff/errores clasificados.
+- [x] Comandos mutadores correlacionados con la interacción vigente.
+- [x] Telegram mutador permanece habilitado bajo el contrato R4.
 
 **Prioridad:** P0 cuando Telegram mutador esté expuesto.
 
 **Depende de:** R1.
+
+**Evidencia:** [contrato R4 de ciclo de vida Telegram](specs/R4-telegram-lifecycle.md), lock por token, offset atómico, target exacto de misión y 217 tests locales correctos.
+
+**Riesgo residual:** at-most-once puede perder un comando tras una caída; la autorización se apoya en el chat privado configurado y el `mission_tag`, no en una sesión criptográfica por interacción.
 
 ### R5 — CI Windows/Linux
 
