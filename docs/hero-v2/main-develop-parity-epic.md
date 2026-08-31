@@ -72,7 +72,7 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 **Depende de:** nada.
 
-**Evidencia:** [contrato R1 de autoridad por fase](specs/R1-phase-authority.md), matriz efectiva en `PHASES`, 198 tests locales correctos.
+**Evidencia:** [contrato R1 de autoridad por fase](specs/R1-phase-authority.md), matriz efectiva en `PHASES`, 199 tests locales correctos.
 
 **Riesgo residual:** la escritura de implementación sigue siendo de todo el proyecto hasta que el contrato produzca rutas normalizadas; el sandbox de procesos, entorno hijo y validación confiable pertenecen a R2.
 
