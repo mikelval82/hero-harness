@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mission_orchestrator.bootstrap import RuntimeConfig, build_runtime
+from mission_orchestrator.cli import _telegram_config
 from mission_orchestrator.domain.mission import GateMode, MissionMode
 
 
@@ -29,6 +31,11 @@ class BootstrapPreflightTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "dirty worktree"):
                     build_runtime(config)
             setup.assert_not_called()
+
+    def test_partial_telegram_configuration_is_rejected(self) -> None:
+        with patch.dict("os.environ", {"TELEGRAM_TOKEN": "token"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "configured together"):
+                _telegram_config()
 
 
 if __name__ == "__main__":

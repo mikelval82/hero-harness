@@ -42,16 +42,19 @@ def main(argv: list[str] | None = None) -> int:
     workspace = runtime.workspace
     _install_signal_handlers(runtime.commands)
     atexit.register(lambda: services.logger.log("process exit"))
-    if os.environ.get("TELEGRAM_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
-        TelegramListener(
-            token=os.environ["TELEGRAM_TOKEN"],
-            chat_id=os.environ["TELEGRAM_CHAT_ID"],
+    telegram = _telegram_config()
+    if telegram is not None:
+        token, chat_id = telegram
+        listener = TelegramListener(
+            token=token,
+            chat_id=chat_id,
             mission_tag=workspace.mission_tag,
             artifacts=services.artifacts,
             state=services.state,
             commands=runtime.commands,
             registry=runtime.registry,
         ).start()
+        atexit.register(listener.stop)
     StdinListener(runtime.commands).start_if_tty()
     if args.web:
         web = MissionWebServer(
@@ -83,6 +86,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--web", action="store_true")
     parser.add_argument("--web-port", type=int, default=8765)
     return parser.parse_args(argv)
+
+
+def _telegram_config() -> tuple[str, str] | None:
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if bool(token) != bool(chat_id):
+        raise ValueError("TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be configured together")
+    return (token, chat_id) if token else None
 
 
 def resolve_task(args: argparse.Namespace) -> str:
