@@ -18,6 +18,7 @@ class ToolAccess(Enum):
     READ_ONLY = "read_only"
     PATH_WRITE = "path_write"
     PROJECT_EXECUTION = "project_execution"
+    TRUSTED_VALIDATION = "trusted_validation"
     HARNESS_MUTATION = "harness_mutation"
 
 

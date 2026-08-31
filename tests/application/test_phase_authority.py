@@ -82,7 +82,10 @@ class PhaseAuthorityTest(unittest.TestCase):
             {schema["name"] for schema in research},
             {"Read", "Glob", "Grep", "Write", "GraphQuery", "GraphPropose"},
         )
-        self.assertEqual({schema["name"] for schema in review}, {"Read", "Glob", "Grep", "Write"})
+        self.assertEqual(
+            {schema["name"] for schema in review},
+            {"Read", "Glob", "Grep", "Write", "RunValidation"},
+        )
 
     def test_non_implementing_phase_cannot_write_the_project_and_emits_safe_telemetry(self) -> None:
         secret_path = self.project / "secret.py"
@@ -161,6 +164,25 @@ class PhaseAuthorityTest(unittest.TestCase):
             self.registry.schemas_for(authority)
         self.assertEqual(raised.exception.reason, "tool_unregistered")
         self.assertEqual(self.logger.metrics[-1]["tool"], "NotRegistered")
+
+    def test_review_can_request_only_the_fixed_validation_check(self) -> None:
+        with self.assertRaises(ToolAuthorizationError) as raised:
+            self.registry.execute(
+                "RunValidation",
+                {"check_id": "target_validation"},
+                self.env,
+                PHASES[PhaseName.RESEARCH].authority,
+            )
+        self.assertEqual(raised.exception.reason, "tool_not_allowed")
+        self.assertEqual(
+            self.registry.execute(
+                "RunValidation",
+                {"check_id": "target_validation"},
+                self.env,
+                PHASES[PhaseName.REVIEW].authority,
+            ),
+            "exit=not_configured\nNo mission validation script is configured.",
+        )
 
 
 if __name__ == "__main__":

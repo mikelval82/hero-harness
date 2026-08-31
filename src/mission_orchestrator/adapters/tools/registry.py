@@ -8,6 +8,7 @@ from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, W
 from mission_orchestrator.adapters.tools.graph_tools import GraphProposeTool, GraphQueryTool
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
 from mission_orchestrator.adapters.tools.search_tools import GlobTool, GrepTool
+from mission_orchestrator.adapters.tools.validation_runner import RunValidationTool
 from mission_orchestrator.domain.phase import PhaseAuthority
 from mission_orchestrator.ports.logger import MissionLogger
 from mission_orchestrator.ports.tool_registry import (
@@ -151,6 +152,7 @@ def default_tool_registry(logger: MissionLogger | None = None) -> LocalToolRegis
     registry.register(GlobTool(path_policy))
     registry.register(GrepTool(path_policy))
     registry.register(BashTool(BashPolicy(path_policy)))
+    registry.register(RunValidationTool())
     registry.register(GraphQueryTool())
     registry.register(GraphProposeTool())
     return registry
