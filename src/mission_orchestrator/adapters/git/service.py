@@ -3,12 +3,51 @@ from __future__ import annotations
 import os
 import platform
 import subprocess
+from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
+
+
+MUTATING_MODES = frozenset({"full", "focused", "hotfix"})
+
+
+@dataclass(frozen=True)
+class DirtyBaseline:
+    paths: tuple[dict[str, str], ...]
 
 
 class SubprocessGitService:
     def __init__(self, project_dir: Path) -> None:
         self.project_dir = project_dir
+        self._baseline_paths: frozenset[str] = frozenset()
+
+    def preflight(
+        self,
+        *,
+        branch: str,
+        resume: bool,
+        allow_dirty: bool,
+        mutating: bool,
+    ) -> DirtyBaseline | None:
+        """Check every mutable Git invariant before workspace creation or checkout."""
+
+        if not mutating:
+            return None
+        self._require_repository()
+        self._validate_branch(branch)
+        self._ensure_identity()
+        if resume:
+            if allow_dirty:
+                raise RuntimeError("--allow-dirty cannot be combined with --resume")
+            self._require_current_branch(branch)
+            return None
+        dirty = self._dirty_baseline()
+        if dirty.paths and not allow_dirty:
+            raise RuntimeError("Git worktree is not clean; rerun with explicit --allow-dirty to preserve it")
+        self._baseline_paths = frozenset(item["path"] for item in dirty.paths)
+        self.ensure_develop()
+        self.setup_branch(branch)
+        return dirty if dirty.paths else None
 
     def detect_base_branch(self) -> str:
         origin_head = self._run(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], check=False)
@@ -20,7 +59,6 @@ class SubprocessGitService:
         return "main"
 
     def ensure_develop(self) -> str:
-        self._ensure_identity()
         if self._run(["git", "rev-parse", "--verify", "develop"], check=False).returncode == 0:
             self._run(["git", "checkout", "develop"])
             return "develop"
@@ -29,6 +67,7 @@ class SubprocessGitService:
         return "develop"
 
     def setup_branch(self, branch: str) -> str:
+        self._validate_branch(branch)
         result = self._run(["git", "checkout", "-b", branch], check=False)
         if result.returncode == 0:
             return branch
@@ -51,6 +90,10 @@ class SubprocessGitService:
     def stage_files(self, files: list[Path]) -> None:
         if not files:
             return
+        staged = {str(path.resolve().relative_to(self.project_dir.resolve())).replace("\\", "/") for path in files}
+        protected = staged & self._baseline_paths
+        if protected:
+            raise RuntimeError(f"refusing to stage pre-existing dirty paths: {', '.join(sorted(protected))}")
         self._run(["git", "add", "--", *[str(path) for path in files]])
 
     def final_commit(self, task_description: str, summary: str) -> None:
@@ -129,18 +172,55 @@ class SubprocessGitService:
         return "gpg" in lowered and "sign" in lowered
 
     def _ensure_identity(self) -> None:
-        name = self._run(["git", "config", "user.name"], check=False).stdout.strip()
-        email = self._run(["git", "config", "user.email"], check=False).stdout.strip()
-        env_name = os.environ.get("GIT_AUTHOR_NAME", "")
-        env_email = os.environ.get("GIT_AUTHOR_EMAIL", "")
-        if not name and env_name:
-            self._run(["git", "config", "user.name", env_name])
-        if not email and env_email:
-            self._run(["git", "config", "user.email", env_email])
-        name = self._run(["git", "config", "user.name"], check=False).stdout.strip()
-        email = self._run(["git", "config", "user.email"], check=False).stdout.strip()
+        name = os.environ.get("GIT_AUTHOR_NAME", "").strip()
+        email = os.environ.get("GIT_AUTHOR_EMAIL", "").strip()
+        if bool(name) != bool(email):
+            raise RuntimeError("GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL must be provided together")
+        if name and email:
+            self._run(["git", "config", "--local", "user.name", name])
+            self._run(["git", "config", "--local", "user.email", email])
+            return
+        name = self._run(["git", "config", "--local", "--get", "user.name"], check=False).stdout.strip()
+        email = self._run(["git", "config", "--local", "--get", "user.email"], check=False).stdout.strip()
         if not name or not email:
-            raise RuntimeError("Git identity missing. Configure user.name/user.email or GIT_AUTHOR_* env vars.")
+            raise RuntimeError("Git identity missing. Configure local user.name/user.email or paired GIT_AUTHOR_* values.")
+
+    def _require_repository(self) -> None:
+        root = self._run(["git", "rev-parse", "--show-toplevel"], check=False)
+        if root.returncode != 0 or not root.stdout.strip():
+            raise RuntimeError("target is not a Git repository")
+        if Path(root.stdout.strip()).resolve() != self.project_dir.resolve():
+            raise RuntimeError("project directory must be the Git repository root")
+
+    def _validate_branch(self, branch: str) -> None:
+        result = self._run(["git", "check-ref-format", "--branch", branch], check=False)
+        if result.returncode != 0 or result.stdout.strip() != branch:
+            raise RuntimeError(f"invalid Git branch name: {branch!r}")
+
+    def _require_current_branch(self, expected: str) -> None:
+        result = self._run(["git", "symbolic-ref", "--quiet", "--short", "HEAD"], check=False)
+        actual = result.stdout.strip()
+        if result.returncode != 0 or not actual:
+            raise RuntimeError("cannot resume mission on detached HEAD")
+        if actual != expected:
+            raise RuntimeError(f"cannot resume branch {expected!r}; current branch is {actual!r}")
+
+    def _dirty_baseline(self) -> DirtyBaseline:
+        result = self._run(["git", "status", "--porcelain=v1", "--untracked-files=all"], check=False)
+        if result.returncode != 0:
+            raise RuntimeError("could not inspect Git worktree")
+        paths: list[dict[str, str]] = []
+        for line in result.stdout.splitlines():
+            if len(line) < 4:
+                continue
+            raw = line[3:].strip()
+            if " -> " in raw:
+                raw = raw.rsplit(" -> ", 1)[-1]
+            path = (self.project_dir / raw).resolve()
+            relative = str(path.relative_to(self.project_dir.resolve())).replace("\\", "/")
+            digest = sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
+            paths.append({"path": relative, "sha256": digest, "status": line[:2]})
+        return DirtyBaseline(tuple(sorted(paths, key=lambda item: item["path"])))
 
     @staticmethod
     def _validation_script(project_dir: Path) -> Path | None:

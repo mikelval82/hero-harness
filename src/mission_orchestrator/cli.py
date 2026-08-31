@@ -34,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         no_grill=args.no_grill,
         max_tasks=args.max_tasks,
         resume=args.resume,
+        allow_dirty=args.allow_dirty,
         provider=args.provider,
         model=args.model,
     ))
@@ -70,6 +71,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("branch", nargs="?")
     parser.add_argument("--no-grill", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
     parser.add_argument("--mode", choices=[mode.value for mode in MissionMode], default="full")

@@ -77,6 +77,20 @@ class WorkspaceScopesTest(unittest.TestCase):
         self.assertEqual(Path(manifest["project_dir"]), project.resolve())
         self.assertEqual(manifest["branch"], "feat/scope")
 
+    def test_resume_requires_an_existing_matching_manifest(self) -> None:
+        project = self._project("app")
+        with self.assertRaisesRegex(RuntimeError, "does not exist"):
+            self._setup(project, resume=True)
+        info = self._setup(project, branch="feature/original")
+        with self.assertRaisesRegex(RuntimeError, "does not exist"):
+            self._setup(project, branch="feature/other", resume=True)
+        manifest_path = info.harness_dir / "_mission.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["branch"] = "feature/tampered"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "branch does not match"):
+            self._setup(project, branch="feature/original", resume=True)
+
 
 if __name__ == "__main__":
     unittest.main()
