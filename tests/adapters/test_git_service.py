@@ -58,7 +58,10 @@ class GitSigningFallbackTest(unittest.TestCase):
 
     def test_final_commit_still_fails_on_non_signing_errors(self) -> None:
         self._stage_change()
-        (self.repo / ".git" / "hooks" / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        hook = self.repo / ".git" / "hooks" / "pre-commit"
+        hook.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        if not platform.system().lower().startswith("win"):
+            hook.chmod(0o755)
 
         with self.assertRaises(RuntimeError):
             self.service.final_commit("add work file", "summary")
