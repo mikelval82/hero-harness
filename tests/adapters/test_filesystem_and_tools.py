@@ -120,6 +120,18 @@ class FilesystemAndToolsTest(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 bash.execute({"command": "/bin/sh -c echo"}, env)
 
+    def test_bash_real_child_process_cannot_read_provider_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as project, tempfile.TemporaryDirectory() as harness:
+            project_dir = Path(project)
+            (project_dir / "env_probe.py").write_text(
+                "import os\nprint(os.getenv('DEEPSEEK_API_KEY', 'missing'))\n",
+                encoding="utf-8",
+            )
+            bash = BashTool(BashPolicy(PathPolicy()))
+            with patch.dict("os.environ", {"PATH": __import__("os").environ["PATH"], "DEEPSEEK_API_KEY": "secret"}, clear=True):
+                result = bash.execute({"command": "python env_probe.py"}, ToolEnvironment(project_dir, Path(harness)))
+            self.assertEqual(result, "exit=0\nmissing")
+
     def test_validation_uses_fixed_runtime_selection_and_sanitized_environment(self) -> None:
         with tempfile.TemporaryDirectory() as project, tempfile.TemporaryDirectory() as harness:
             project_dir = Path(project)
