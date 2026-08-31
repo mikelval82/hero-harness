@@ -13,7 +13,7 @@ from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.tools.graph_tools import GraphProposeTool, GraphQueryTool
 from mission_orchestrator.adapters.tools.registry import default_tool_registry
 from mission_orchestrator.application.phase_registry import PHASES
-from mission_orchestrator.domain.phase import PhaseName
+from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
 from mission_orchestrator.ports.tool_registry import ToolEnvironment
 
 
@@ -130,7 +130,13 @@ class GraphToolsTest(unittest.TestCase):
 
     def test_b7_registration_and_phase_wiring(self) -> None:
         registry = default_tool_registry()
-        schemas = registry.schemas_for(("GraphQuery", "GraphPropose"))
+        schemas = registry.schemas_for(
+            PhaseAuthority(
+                PhaseName.RESEARCH,
+                ("GraphQuery", "GraphPropose"),
+                harness_mutation_tools=("GraphPropose",),
+            )
+        )
         self.assertEqual({schema["name"] for schema in schemas}, {"GraphQuery", "GraphPropose"})
         for phase in (PhaseName.RESEARCH, PhaseName.GRILL):
             self.assertIn("GraphQuery", PHASES[phase].tools)

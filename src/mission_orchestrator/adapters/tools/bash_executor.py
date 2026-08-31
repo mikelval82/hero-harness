@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mission_orchestrator.adapters.tools.bash_policy import BashPolicy
 from mission_orchestrator.adapters.tools.file_tools import _schema
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.ports.tool_registry import ToolAccess, ToolEnvironment
 
 
 @dataclass
@@ -15,6 +15,7 @@ class BashTool:
     policy: BashPolicy
     name: str = "Bash"
     timeout_seconds: int = 120
+    access: ToolAccess = ToolAccess.PROJECT_EXECUTION
 
     def schema(self) -> dict:
         return _schema(
@@ -38,6 +39,7 @@ class BashTool:
                 capture_output=True,
                 timeout=self.timeout_seconds,
                 check=False,
+                env=self._child_env(),
             )
         else:
             result = subprocess.run(
@@ -48,9 +50,23 @@ class BashTool:
                 timeout=self.timeout_seconds,
                 shell=True,
                 check=False,
+                env=self._child_env(),
             )
         output = (result.stdout or "") + (result.stderr or "")
         return f"exit={result.returncode}\n{output}".rstrip()
+
+    @staticmethod
+    def _child_env() -> dict[str, str]:
+        """Do not expose the HARNESS workspace path to a project process.
+
+        R2 will replace the remaining inherited environment with a dedicated
+        credential-filtering executor. This small boundary prevents Bash from
+        using the workspace convenience variable to bypass R1 artifact scope.
+        """
+
+        child_env = os.environ.copy()
+        child_env.pop("CLAUDE_HARNESS", None)
+        return child_env
 
     def _run_builtin(self, segment: list[str], env: ToolEnvironment) -> str | None:
         command = segment[0]
@@ -99,4 +115,3 @@ class BashTool:
         lines = self._read_file(paths[0], env).splitlines()
         selected = lines[:count] if command == "head" else lines[-count:]
         return "\n".join(selected)
-

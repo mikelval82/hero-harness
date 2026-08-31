@@ -196,10 +196,10 @@ class _Prompts:
 
 
 class _Tools:
-    def schemas_for(self, names):  # noqa: ANN001
+    def schemas_for(self, authority):  # noqa: ANN001
         return []
 
-    def execute(self, name, input, env):  # noqa: ANN001
+    def execute(self, name, input, env, authority):  # noqa: ANN001
         return ""
 
     def register(self, tool):  # noqa: ANN001

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from mission_orchestrator.domain.phase import PhaseConfig, PhaseName
 
-DEFAULT_TOOLS = ("Read", "Write", "Glob", "Grep", "Bash")
-IMPL_TOOLS = ("Read", "Write", "Edit", "Glob", "Grep", "Bash")
-REVIEW_TOOLS = ("Read", "Write", "Glob", "Grep", "Bash")
-DESIGN_TOOLS = (*DEFAULT_TOOLS, "GraphQuery", "GraphPropose")
+READ_TOOLS = ("Read", "Glob", "Grep")
+ARTIFACT_TOOLS = (*READ_TOOLS, "Write")
+IMPL_TOOLS = (*ARTIFACT_TOOLS, "Edit", "Bash")
+DESIGN_TOOLS = (*ARTIFACT_TOOLS, "GraphQuery", "GraphPropose")
 
 GRAPH = "__graph_instructions__"
 
@@ -23,16 +23,19 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "BRIEF_SEED": "brief-seed.md",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        harness_write_paths=("brainstorm.md",),
+        harness_mutation_tools=("GraphPropose",),
     ),
     PhaseName.STRUCTURE: PhaseConfig(
         PhaseName.STRUCTURE,
         "structurer.md",
         "structure-prompt.md",
         None,
-        DEFAULT_TOOLS,
+        ARTIFACT_TOOLS,
         30,
         1200,
         {"BRAINSTORM": "brainstorm.md", "BRIEF": "brief.md", "CHANGESET": "changeset.json"},
+        harness_write_paths=("tasks.json",),
     ),
     PhaseName.GRILL: PhaseConfig(
         PhaseName.GRILL,
@@ -49,13 +52,15 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
         is_conversation=True,
+        harness_write_paths=("brief.md",),
+        harness_mutation_tools=("GraphPropose",),
     ),
     PhaseName.SPEC: PhaseConfig(
         PhaseName.SPEC,
         "specifier.md",
         "spec-prompt.md",
         "spec.md",
-        DEFAULT_TOOLS,
+        ARTIFACT_TOOLS,
         30,
         1200,
         {
@@ -67,13 +72,14 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        harness_write_paths=("spec.md",),
     ),
     PhaseName.PLAN: PhaseConfig(
         PhaseName.PLAN,
         "planner.md",
         "plan-prompt.md",
         "plan.md",
-        DEFAULT_TOOLS,
+        ARTIFACT_TOOLS,
         30,
         1200,
         {
@@ -86,6 +92,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        harness_write_paths=("plan.md", "decisions.md"),
     ),
     PhaseName.IMPLEMENT: PhaseConfig(
         PhaseName.IMPLEMENT,
@@ -104,6 +111,8 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        allow_project_writes=True,
+        harness_write_paths=("status.md",),
     ),
     PhaseName.IMPLEMENT_BURSTS: PhaseConfig(
         PhaseName.IMPLEMENT_BURSTS,
@@ -121,13 +130,15 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        allow_project_writes=True,
+        harness_write_paths=("_burst_progress.md", "status.md"),
     ),
     PhaseName.REVIEW: PhaseConfig(
         PhaseName.REVIEW,
         "reviewer.md",
         "review-prompt.md",
         "audit.md",
-        REVIEW_TOOLS,
+        ARTIFACT_TOOLS,
         50,
         1200,
         {
@@ -137,6 +148,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
+        harness_write_paths=("audit.md",),
     ),
     PhaseName.REIMPLEMENT: PhaseConfig(
         PhaseName.REIMPLEMENT,
@@ -153,6 +165,8 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "CONTEXT_HOT": "context-hot.md",
             "TASK_CONTRACT": "task-contract.json",
         },
+        allow_project_writes=True,
+        harness_write_paths=("status.md",),
     ),
     PhaseName.COMPACT: PhaseConfig(
         PhaseName.COMPACT,
@@ -163,6 +177,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         10,
         1200,
         {"CONTEXT_HOT": "context-hot.md"},
+        harness_write_paths=("_compact_tmp.md",),
     ),
     PhaseName.CONSOLIDATE: PhaseConfig(
         PhaseName.CONSOLIDATE,
@@ -173,6 +188,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         10,
         1200,
         {"TASKS": "tasks.json"},
+        harness_write_paths=("tasks.json",),
     ),
     PhaseName.REPORT: PhaseConfig(
         PhaseName.REPORT,
@@ -183,6 +199,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         10,
         1200,
         {},
+        harness_write_paths=("mission-report.md",),
     ),
     PhaseName.REPORT_PLAN: PhaseConfig(
         PhaseName.REPORT_PLAN,
@@ -193,6 +210,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         10,
         1200,
         {},
+        harness_write_paths=("mission-report.md",),
     ),
 }
 

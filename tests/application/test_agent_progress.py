@@ -13,6 +13,7 @@ from mission_orchestrator.application.phase_executor import PhaseExecutor
 from mission_orchestrator.domain.mission import MissionMode
 from mission_orchestrator.domain.phase import PhaseName, PhaseResult
 from mission_orchestrator.ports.events import NullEventPublisher
+from mission_orchestrator.ports.tool_registry import ToolAuthorizationError
 
 from tests.application.test_orchestrator import FakeAgent, make_services
 
@@ -47,6 +48,14 @@ class SilentAgent:
 class MaxTurnsAgent:
     def run_phase(self, request):  # noqa: ANN001
         raise MaxTurnsExceeded("maximum turns exceeded", PhaseResult("", 30, 12.5, 900, 100))
+
+    def run_conversation(self, request):  # noqa: ANN001
+        return self.run_phase(request)
+
+
+class DenyingAgent:
+    def run_phase(self, request):  # noqa: ANN001
+        raise ToolAuthorizationError(request.authority.phase.value, "Edit", "tool_not_allowed")
 
     def run_conversation(self, request):  # noqa: ANN001
         return self.run_phase(request)
@@ -122,6 +131,21 @@ class PhaseProgressEventsTest(unittest.TestCase):
             self.assertEqual(ended[0]["turns"], 30)
             self.assertEqual(ended[0]["input_tokens"], 900)
             self.assertEqual(ended[0]["output_tokens"], 100)
+
+    def test_r1_authorization_rejection_blocks_phase_and_publishes_authority(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            executor, events = self._executor(Path(raw), DenyingAgent())
+
+            execution = executor.run(PhaseName.RESEARCH)
+
+            self.assertIsNotNone(execution.block)
+            self.assertEqual(execution.block.kind.value, "policy")
+            authority = [payload for kind, payload in events.published if kind == "phase_authority"]
+            self.assertEqual(len(authority), 1)
+            self.assertEqual(authority[0]["phase"], "research")
+            self.assertFalse(authority[0]["allow_project_writes"])
+            ended = [payload for kind, payload in events.published if kind == "phase_ended"]
+            self.assertEqual(ended[0]["block_kind"], "policy")
 
     def test_p4_publishing_logger_emits_tool_call_events(self) -> None:
         calls: list[tuple] = []

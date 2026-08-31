@@ -12,6 +12,7 @@ class BlockKind(Enum):
     API_RETRIES = "api_retries"
     USAGE_LIMIT = "usage_limit"
     GATE_FAIL = "gate_fail"
+    POLICY = "policy"
     USER_REJECTED = "user_rejected"
     STRUCTURE = "structure"
 
@@ -33,4 +34,3 @@ class BlockReason:
         if self.detail:
             bits.append(self.detail)
         return " | ".join(bits)
-
