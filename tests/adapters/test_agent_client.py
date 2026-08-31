@@ -1,9 +1,4 @@
-"""Acceptance tests for the Anthropic agent loop tool-error handling.
-
-A tool failure (policy rejection, bad input, runtime error) must be returned
-to the model as an ``is_error`` tool_result so it can self-correct, instead of
-crashing the phase.
-"""
+"""Acceptance tests for Anthropic tool errors and terminal authorization rejection."""
 
 from __future__ import annotations
 
@@ -12,7 +7,9 @@ from types import SimpleNamespace
 
 from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
 from mission_orchestrator.application.errors import ApiUsageLimitExceeded
+from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
 from mission_orchestrator.ports.agent_client import AgentRequest
+from mission_orchestrator.ports.tool_registry import ToolAuthorizationError
 
 
 class _FakeBlock(SimpleNamespace):
@@ -46,7 +43,7 @@ class _FakeRegistry:
     def __init__(self, error: Exception) -> None:
         self._error = error
 
-    def execute(self, name: str, input: dict, env) -> str:
+    def execute(self, name: str, input: dict, env, authority) -> str:
         raise self._error
 
 
@@ -70,6 +67,7 @@ def _request() -> AgentRequest:
         user_prompt="do the thing",
         tool_names=[],
         tool_schemas=[],
+        authority=PhaseAuthority(PhaseName.RESEARCH, ()),
         max_turns=5,
         timeout_seconds=30,
     )
@@ -136,6 +134,21 @@ class ToolErrorHandlingTest(unittest.TestCase):
         entry = client._client.messages.calls[1]["messages"][-1]["content"][0]
         self.assertTrue(entry["is_error"])
         self.assertIn("unknown tool", entry["content"])
+
+    def test_authorization_rejection_stops_the_provider_loop(self) -> None:
+        responses = [
+            SimpleNamespace(
+                content=[_tool_use("t1", "Edit", {"file_path": "src/app.py"})],
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            )
+        ]
+        client = _make_client(
+            responses,
+            _FakeRegistry(ToolAuthorizationError("research", "Edit", "tool_not_allowed")),
+        )
+
+        with self.assertRaises(ToolAuthorizationError):
+            client.run_phase(_request())
 
 
 if __name__ == "__main__":

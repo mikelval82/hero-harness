@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.adapters.tools.file_tools import _schema
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.ports.tool_registry import ToolAccess, ToolEnvironment
 
 AGENT_AUTHOR = "AGENT"
 
@@ -22,6 +22,7 @@ def _facts_graph(env: ToolEnvironment) -> SQLiteCodeGraph:
 @dataclass
 class GraphQueryTool:
     name: str = "GraphQuery"
+    access: ToolAccess = ToolAccess.READ_ONLY
 
     def schema(self) -> dict:
         return _schema(
@@ -94,6 +95,7 @@ class GraphQueryTool:
 @dataclass
 class GraphProposeTool:
     name: str = "GraphPropose"
+    access: ToolAccess = ToolAccess.HARNESS_MUTATION
 
     def schema(self) -> dict:
         return _schema(

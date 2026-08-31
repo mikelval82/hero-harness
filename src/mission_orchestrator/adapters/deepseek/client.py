@@ -20,7 +20,11 @@ from mission_orchestrator.ports.agent_client import AgentRequest, ConversationRe
 from mission_orchestrator.ports.command_bus import CommandBus
 from mission_orchestrator.ports.conversation import ConversationLog, NullConversationLog
 from mission_orchestrator.ports.events import EventPublisher, NullEventPublisher
-from mission_orchestrator.ports.tool_registry import ToolEnvironment, ToolRegistry
+from mission_orchestrator.ports.tool_registry import (
+    ToolAuthorizationError,
+    ToolEnvironment,
+    ToolRegistry,
+)
 
 
 MAX_TOOL_RESULT_CHARS = 50_000
@@ -106,7 +110,11 @@ class DeepSeekAgentClient:
                 for call in tool_calls:
                     is_error = False
                     try:
-                        result = self.tools.execute(call["name"], call["input"], self.tool_env)
+                        result = self.tools.execute(
+                            call["name"], call["input"], self.tool_env, request.authority
+                        )
+                    except ToolAuthorizationError:
+                        raise
                     except Exception as exc:
                         is_error = True
                         result = f"{exc.__class__.__name__}: {exc}"

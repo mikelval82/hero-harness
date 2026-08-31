@@ -16,7 +16,7 @@ from mission_orchestrator.domain.block import BlockKind, BlockReason
 from mission_orchestrator.domain.mission import MissionContext, MissionSnapshot
 from mission_orchestrator.domain.phase import PhaseName, PhaseResult
 from mission_orchestrator.ports.agent_client import AgentRequest, ConversationRequest
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.ports.tool_registry import ToolAuthorizationError, ToolEnvironment
 
 
 GRAPH_INSTRUCTIONS = """Use the SQLite code graph when useful.
@@ -51,6 +51,8 @@ class PhaseExecutor:
             "phase_started",
             {"phase": phase.value, "mode": self.context.mode.value, "max_turns": config.max_turns},
         )
+        authority = config.authority
+        self.services.events.publish("phase_authority", authority.to_payload())
         self.services.state.update_phase(
             MissionSnapshot(
                 phase=phase.value,
@@ -68,7 +70,10 @@ class PhaseExecutor:
         system_prompt = (
             self.services.prompts.render_system_prompt(config.agent_file) if config.agent_file else ""
         )
-        tool_schemas = self.services.tools.schemas_for(config.tools)
+        try:
+            tool_schemas = self.services.tools.schemas_for(authority)
+        except ToolAuthorizationError as exc:
+            return PhaseExecution(None, self._blocked(phase, BlockKind.POLICY, str(exc)))
         request_cls = ConversationRequest if config.is_conversation else AgentRequest
         request = request_cls(
             phase_name=phase.value,
@@ -76,6 +81,7 @@ class PhaseExecutor:
             user_prompt=user_prompt,
             tool_names=config.tools,
             tool_schemas=tool_schemas,
+            authority=authority,
             max_turns=config.max_turns,
             timeout_seconds=config.timeout_seconds,
         )
@@ -93,6 +99,8 @@ class PhaseExecutor:
             return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.API_RETRIES, str(exc), exc.metrics))
         except ApiUsageLimitExceeded as exc:
             return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.USAGE_LIMIT, str(exc), exc.metrics))
+        except ToolAuthorizationError as exc:
+            return PhaseExecution(None, self._blocked(phase, BlockKind.POLICY, str(exc)))
         except Exception as exc:
             return PhaseExecution(None, self._blocked(phase, BlockKind.API_RETRIES, str(exc)))
 
@@ -177,4 +185,3 @@ class PhaseExecutor:
     @property
     def tool_environment(self) -> ToolEnvironment:
         return ToolEnvironment(self.context.project_dir, self.context.harness_dir)
-

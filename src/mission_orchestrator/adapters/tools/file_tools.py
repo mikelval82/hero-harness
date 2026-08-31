@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.ports.tool_registry import ToolAccess, ToolEnvironment
 
 
 def _schema(name: str, description: str, properties: dict, required: list[str]) -> dict:
@@ -23,6 +23,7 @@ def _schema(name: str, description: str, properties: dict, required: list[str]) 
 class ReadTool:
     policy: PathPolicy
     name: str = "Read"
+    access: ToolAccess = ToolAccess.READ_ONLY
 
     def schema(self) -> dict:
         return _schema(
@@ -51,6 +52,7 @@ class ReadTool:
 class WriteTool:
     policy: PathPolicy
     name: str = "Write"
+    access: ToolAccess = ToolAccess.PATH_WRITE
 
     def schema(self) -> dict:
         return _schema(
@@ -71,6 +73,7 @@ class WriteTool:
 class EditTool:
     policy: PathPolicy
     name: str = "Edit"
+    access: ToolAccess = ToolAccess.PATH_WRITE
 
     def schema(self) -> dict:
         return _schema(
@@ -98,4 +101,3 @@ class EditTool:
             raise ValueError("old_string has multiple matches; set replace_all=true")
         path.write_text(text.replace(old, new, -1 if replace_all else 1), encoding="utf-8")
         return f"Edited {path} ({count if replace_all else 1} replacement(s))"
-

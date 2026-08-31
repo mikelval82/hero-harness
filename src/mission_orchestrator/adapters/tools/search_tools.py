@@ -10,7 +10,7 @@ from pathlib import Path
 
 from mission_orchestrator.adapters.tools.file_tools import _schema
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
-from mission_orchestrator.ports.tool_registry import ToolEnvironment
+from mission_orchestrator.ports.tool_registry import ToolAccess, ToolEnvironment
 
 
 def _git_visible_files(root: Path) -> list[Path] | None:
@@ -34,6 +34,7 @@ def _git_visible_files(root: Path) -> list[Path] | None:
 class GlobTool:
     policy: PathPolicy
     name: str = "Glob"
+    access: ToolAccess = ToolAccess.READ_ONLY
 
     def schema(self) -> dict:
         return _schema(
@@ -59,6 +60,7 @@ class GlobTool:
 class GrepTool:
     policy: PathPolicy
     name: str = "Grep"
+    access: ToolAccess = ToolAccess.READ_ONLY
 
     def schema(self) -> dict:
         return _schema(
@@ -151,4 +153,3 @@ class GrepTool:
             if len(output) >= head_limit:
                 break
         return "\n".join(output[:head_limit])
-
