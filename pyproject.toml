@@ -3,13 +3,28 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mission-orchestrator"
+name = "hero-harness"
 version = "0.1.0"
-description = "Pragmatic hexagonal LLM mission orchestrator."
+description = "HERO v2 mission orchestration runtime with contract-governed execution."
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [{ name = "Mission Orchestrator" }]
+license = { file = "LICENSE" }
+authors = [{ name = "Mikel Val Calvo" }]
+keywords = ["harness", "llm", "agents", "mission-orchestration", "hero"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/mikelval82/hero-harness"
+Repository = "https://github.com/mikelval82/hero-harness"
+Issues = "https://github.com/mikelval82/hero-harness/issues"
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]

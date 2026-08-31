@@ -1,6 +1,7 @@
-# Mission Orchestrator v2
+# HERO Harness v2
 
-Mission Orchestrator es el núcleo de ejecución de HERO: convierte una intención
+`hero-harness` es la distribución pública; `mission_orchestrator` es su módulo
+Python estable. Es el núcleo de ejecución de HERO: convierte una intención
 revisada en una misión trazable, gobierna sus contratos y decide si la
 implementación puede completarse. Su interfaz visual complementaria es
 [HERO Graph Lab](https://github.com/mikelval82/hero-graph-lab), donde una persona
@@ -66,6 +67,15 @@ Este repositorio contiene una base funcional con:
 - Tests sin depender de Anthropic o Telegram reales ni de repositorios Git externos.
 
 ## Uso
+
+Requiere Python 3.12 o posterior. Crea un entorno e instala sólo los providers
+que vayas a utilizar:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[anthropic]"
+# o bien: .\.venv\Scripts\python.exe -m pip install -e ".[deepseek]"
+```
 
 ```powershell
 .\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo --mode plan
@@ -164,3 +174,17 @@ merge si la verificación y la reconciliación final abren el gate correspondien
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
+
+## Validación y límites de evidencia
+
+La validación local anterior comprueba contratos y adapters con dobles locales;
+no autentica ni contacta proveedores. La workflow [CI](.github/workflows/ci.yml)
+instala el paquete en limpio y ejecuta `pip check`, imports, entry points y la
+suite completa en Python 3.12 sobre Ubuntu y Windows. Los checks son requeridos
+para `develop` y `main`.
+
+El workflow [authenticated-smoke](.github/workflows/authenticated-smoke.yml) es
+deliberadamente independiente: sólo puede iniciarlo una persona con aprobación
+explícita en el entorno de GitHub correspondiente. Mientras no se ejecute con un
+proveedor real, su resultado es `NOT_RUN`; ni los tests locales ni CI constituyen
+una prueba E2E de DNS/TLS corporativo, autenticación, cuotas o respuestas reales.
