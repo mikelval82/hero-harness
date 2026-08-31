@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ from mission_orchestrator.adapters.filesystem.prompt_renderer import FilesystemP
 from mission_orchestrator.adapters.filesystem.state_store import FilesystemMissionStateStore
 from mission_orchestrator.adapters.filesystem.task_repository import JsonTaskRepository
 from mission_orchestrator.adapters.filesystem.workspace import WorkspaceInfo, WorkspaceManager
-from mission_orchestrator.adapters.git.service import SubprocessGitService
+from mission_orchestrator.adapters.git.service import MUTATING_MODES, SubprocessGitService
 from mission_orchestrator.adapters.telegram.notifier import TelegramNotifier
 from mission_orchestrator.adapters.tools.registry import default_tool_registry
 from mission_orchestrator.application.gate_evaluator import MarkdownGateEvaluator
@@ -37,6 +38,7 @@ class RuntimeConfig:
     no_grill: bool = False
     max_tasks: int = 20
     resume: bool = False
+    allow_dirty: bool = False
     provider: str | None = None
     model: str | None = None
 
@@ -52,12 +54,27 @@ class MissionRuntime:
 
 def build_runtime(config: RuntimeConfig) -> MissionRuntime:
     project_dir = config.project_dir.resolve()
-    workspace = WorkspaceManager().setup(
+    workspace_manager = WorkspaceManager()
+    git = SubprocessGitService(project_dir)
+    mutating = config.mode.value in MUTATING_MODES
+    if config.resume:
+        workspace_manager.validate_resume(project_dir=project_dir, branch=config.branch)
+    dirty_baseline = git.preflight(
+        branch=config.branch,
+        resume=config.resume,
+        allow_dirty=config.allow_dirty,
+        mutating=mutating,
+    )
+    workspace = workspace_manager.setup(
         project_dir=project_dir,
         branch=config.branch,
         resume=config.resume,
         gate_mode=config.gate_mode,
     )
+    if dirty_baseline is not None:
+        (workspace.harness_dir / "dirty-baseline.json").write_text(
+            json.dumps({"paths": dirty_baseline.paths}, indent=2) + "\n", encoding="utf-8"
+        )
     artifacts = FilesystemArtifactStore(workspace.harness_dir)
     events = SqliteEventLog(workspace.harness_dir, mission=workspace.mission_tag)
     logger = PublishingLogger(FilesystemMissionLogger(artifacts), events)
@@ -72,9 +89,6 @@ def build_runtime(config: RuntimeConfig) -> MissionRuntime:
         ),
         events,
     )
-    git = SubprocessGitService(project_dir)
-    git.ensure_develop()
-    git.setup_branch(config.branch)
     tool_registry = default_tool_registry(logger)
     conversation = SqliteConversationLog(workspace.harness_dir / "conversation.db")
     provider = (config.provider or os.environ.get("HARNESS_PROVIDER", "anthropic")).strip().lower()

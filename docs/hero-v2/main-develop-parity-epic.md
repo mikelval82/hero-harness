@@ -94,15 +94,19 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### R3 — Git fail-closed
 
-- [ ] Preflight antes de workspace/checkout.
-- [ ] Branch validada y resume ligado a branch/workspace exactos.
-- [ ] Dirty baseline solo con opt-in y sin atribución incorrecta.
-- [ ] Identidad Git completa y local.
-- [ ] Fallos de checkout/stage/commit/merge se propagan.
+- [x] Preflight antes de workspace/checkout.
+- [x] Branch validada y resume ligado a branch/workspace exactos.
+- [x] Dirty baseline solo con opt-in y sin atribución incorrecta.
+- [x] Identidad Git completa y local.
+- [x] Fallos de checkout/stage/commit/merge se propagan.
 
 **Prioridad:** P0.
 
 **Depende de:** R1, R2.
+
+**Evidencia:** [contrato R3 de Git fail-closed](specs/R3-git-fail-closed.md), preflight anterior al workspace, receipt `dirty-baseline.json` y 211 tests locales correctos.
+
+**Riesgo residual:** R3 no aporta aislamiento de worktree a nivel de sistema operativo ni atribuye semánticamente cambios posteriores sobre un path que ya estaba sucio; bloquea su stage automático. R5 debe aportar CI multiplataforma y reglas de protección de ramas.
 
 ### R4 — Telegram seguro
 

@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
@@ -101,6 +102,65 @@ class GitSigningFallbackTest(unittest.TestCase):
             "develop",
         )
         self.assertTrue((self.repo / "feature.py").is_file())
+
+    def test_preflight_rejects_invalid_branch_before_checkout(self) -> None:
+        original = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=self.repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        with self.assertRaisesRegex(RuntimeError, "invalid Git branch"):
+            self.service.preflight(
+                branch="--orphan", resume=False, allow_dirty=False, mutating=True
+            )
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--show-current"], cwd=self.repo, check=True, capture_output=True, text=True
+            ).stdout.strip(),
+            original,
+        )
+
+    def test_preflight_rejects_dirty_tree_unless_opted_in_and_protects_baseline(self) -> None:
+        dirty = self.repo / "user-note.txt"
+        dirty.write_text("keep me", encoding="utf-8")
+        with self.assertRaisesRegex(RuntimeError, "worktree is not clean"):
+            self.service.preflight(branch="feature/dirty", resume=False, allow_dirty=False, mutating=True)
+
+        baseline = self.service.preflight(
+            branch="feature/dirty", resume=False, allow_dirty=True, mutating=True
+        )
+        self.assertIsNotNone(baseline)
+        self.assertEqual(baseline.paths[0]["path"], "user-note.txt")
+        self.assertTrue(baseline.paths[0]["sha256"])
+        with self.assertRaisesRegex(RuntimeError, "pre-existing dirty paths"):
+            self.service.stage_files([dirty])
+
+    def test_resume_requires_exact_attached_branch_without_checkout(self) -> None:
+        self.service.ensure_develop()
+        self.service.setup_branch("feature/resume")
+        self.service.preflight(branch="feature/resume", resume=True, allow_dirty=False, mutating=True)
+
+        _git(self.repo, "checkout", "develop")
+        with self.assertRaisesRegex(RuntimeError, "current branch"):
+            self.service.preflight(branch="feature/resume", resume=True, allow_dirty=False, mutating=True)
+        _git(self.repo, "checkout", "--detach")
+        with self.assertRaisesRegex(RuntimeError, "detached HEAD"):
+            self.service.preflight(branch="feature/resume", resume=True, allow_dirty=False, mutating=True)
+
+    def test_preflight_requires_complete_local_identity_or_paired_environment(self) -> None:
+        _git(self.repo, "config", "--local", "--unset", "user.email")
+        with patch.dict("os.environ", {"GIT_AUTHOR_NAME": "Only name"}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "provided together"):
+                self.service.preflight(branch="feature/identity", resume=False, allow_dirty=False, mutating=True)
+        with patch.dict(
+            "os.environ", {"GIT_AUTHOR_NAME": "Agent", "GIT_AUTHOR_EMAIL": "agent@example.com"}, clear=False
+        ):
+            self.service.preflight(branch="feature/identity", resume=False, allow_dirty=False, mutating=True)
+        self.assertEqual(
+            subprocess.run(
+                ["git", "config", "--local", "--get", "user.email"], cwd=self.repo,
+                check=True, capture_output=True, text=True,
+            ).stdout.strip(),
+            "agent@example.com",
+        )
 
 
 if __name__ == "__main__":

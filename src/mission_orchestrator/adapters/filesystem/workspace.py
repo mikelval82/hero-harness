@@ -53,7 +53,10 @@ class WorkspaceManager:
         project_key_dir = self.root / f"{project_name}-{project_id}"
         project_scope_dir = project_key_dir / "project"
         harness_dir = project_key_dir / "missions" / branch_safe
-        keep = resume and (harness_dir / "_mission.json").exists()
+        keep = False
+        if resume:
+            self.validate_resume(project_dir=project_dir, branch=branch)
+            keep = True
         if harness_dir.exists() and not keep:
             shutil.rmtree(harness_dir)
         harness_dir.mkdir(parents=True, exist_ok=True)
@@ -81,3 +84,21 @@ class WorkspaceManager:
             project_scope_dir,
         )
 
+    def validate_resume(self, *, project_dir: Path, branch: str) -> Path:
+        """Require the exact existing mission before a resume can mutate it."""
+
+        project_dir = project_dir.resolve()
+        project_key_dir = self.root / f"{sanitize(project_dir.name)}-{project_id_for(project_dir)}"
+        harness_dir = project_key_dir / "missions" / sanitize(branch, max_len=60)
+        manifest_path = harness_dir / "_mission.json"
+        if not manifest_path.is_file():
+            raise RuntimeError("cannot resume: mission workspace does not exist")
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise RuntimeError("cannot resume: mission manifest is unreadable") from exc
+        if Path(str(manifest.get("project_dir", ""))).resolve() != project_dir:
+            raise RuntimeError("cannot resume: workspace belongs to a different project")
+        if manifest.get("branch") != branch:
+            raise RuntimeError("cannot resume: workspace branch does not match requested branch")
+        return harness_dir
