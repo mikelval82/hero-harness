@@ -6,6 +6,7 @@ READ_TOOLS = ("Read", "Glob", "Grep")
 ARTIFACT_TOOLS = (*READ_TOOLS, "Write")
 IMPL_TOOLS = (*ARTIFACT_TOOLS, "Edit", "Bash")
 DESIGN_TOOLS = (*ARTIFACT_TOOLS, "GraphQuery", "GraphPropose")
+REVIEW_TOOLS = (*ARTIFACT_TOOLS, "RunValidation")
 
 GRAPH = "__graph_instructions__"
 
@@ -138,7 +139,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "reviewer.md",
         "review-prompt.md",
         "audit.md",
-        ARTIFACT_TOOLS,
+        REVIEW_TOOLS,
         50,
         1200,
         {

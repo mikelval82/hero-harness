@@ -78,15 +78,19 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### R2 — Procesos hijos y credenciales
 
-- [ ] Ejecución `argv` con `shell=False`.
-- [ ] Pipes/operadores implementados por runtime o rechazados.
-- [ ] Credenciales HERO eliminadas del entorno hijo.
-- [ ] Review usa validación confiable en vez de shell libre.
-- [ ] Tests de escape, redirección, paths y environment.
+- [x] Ejecución `argv` con `shell=False`.
+- [x] Pipes/operadores implementados por runtime o rechazados.
+- [x] Credenciales HERO eliminadas del entorno hijo.
+- [x] Review usa validación confiable en vez de shell libre.
+- [x] Tests de escape, redirección, paths y environment.
 
 **Prioridad:** P0.
 
 **Depende de:** R1.
+
+**Evidencia:** [contrato R2 de límite de procesos hijos](specs/R2-child-process-boundary.md), `BashTool` sin shell, `RunValidation` de selección fija y 204 tests locales correctos.
+
+**Riesgo residual:** el executor no es un sandbox de sistema operativo y un `mission-validate.*` modificado en el proyecto sigue siendo código del proyecto; R3/R5 deben sumar preflight y evidencia de validación independiente.
 
 ### R3 — Git fail-closed
 
