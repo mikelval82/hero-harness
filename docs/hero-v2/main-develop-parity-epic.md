@@ -127,15 +127,19 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### R5 — CI Windows/Linux
 
-- [ ] Suite completa en Python 3.12 sobre Windows y Ubuntu.
-- [ ] Build/import/entry points y dependency check.
-- [ ] Checks requeridos sobre el SHA más reciente.
-- [ ] Branch protection para `main` y `develop`.
-- [ ] Smokes autenticados separados de la suite sin secretos.
+- [x] Suite completa en Python 3.12 sobre Windows y Ubuntu.
+- [x] Build/import/entry points y dependency check.
+- [x] Checks requeridos sobre el SHA más reciente.
+- [x] Branch protection para `main` y `develop`.
+- [x] Smokes autenticados separados de la suite sin secretos.
 
 **Prioridad:** P0.
 
 **Depende de:** R1-R3 para que la señal cubra el runtime endurecido.
+
+**Evidencia:** [contrato R5 de CI](specs/R5-ci-matrix.md), [CI verde de la PR](https://github.com/mikelval82/hero-harness/actions/runs/33438767281) en Ubuntu y Windows (Python 3.12, instalación limpia, `pip check`, imports, los tres entry points y 217 tests). GitHub confirma protección activa sobre `develop` y `main`: ambos checks son requeridos, se exige resolver conversaciones y están deshabilitados force-push y borrado de rama.
+
+**Riesgo residual:** el smoke autenticado queda intencionadamente fuera de la suite sin secretos y falla con `NOT_RUN` hasta que un operador lo lance con aprobación explícita y un entorno `authenticated-smoke` autorizado. No constituye todavía un E2E real de proveedor.
 
 ### R6 — Contrato de proyecto público
 

@@ -76,7 +76,7 @@ No existe excepción implícita por urgencia, tamaño del diff o porque Git perm
 | Decisión y baselines | Documentadas |
 | Template de PR | Incorporado en `develop` |
 | `history-guard` | Incorporado para futuros PRs basados en esta historia |
-| Branch protection y required check | Pendiente de configuración remota; forma parte de R5 |
+| Branch protection y required check | Activa en `main` y `develop`: `test (ubuntu-latest)` y `test (windows-latest)` son obligatorios, se exige resolver conversaciones y no se permiten force-push ni borrado |
 | Estrategia final de publicación v2 como `main` | Diferida hasta superar el gate de salida |
 
 Mientras `main` sea la rama por defecto, GitHub toma de `main` las plantillas que ofrece al crear un PR. Por eso, la plantilla añadida a `develop` documenta el contrato y quedará activa automáticamente cuando la rama por defecto sea v2, pero todavía no aparece en la interfaz global. El workflow sí se evalúa en PRs cuya base sea `develop`; no protege PRs con base `main` hasta incorporar allí una regla equivalente sin mezclar las historias.
