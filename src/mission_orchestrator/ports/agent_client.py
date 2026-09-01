@@ -16,6 +16,8 @@ class AgentRequest:
     authority: PhaseAuthority
     max_turns: int
     timeout_seconds: int
+    complexity: str | None = None
+    retry_count: int = 0
 
 
 @dataclass(frozen=True)

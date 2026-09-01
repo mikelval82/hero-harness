@@ -44,6 +44,8 @@ class PhaseExecutor:
         *,
         variables: Mapping[str, str] | None = None,
         evaluate_gate: bool = True,
+        complexity: str | None = None,
+        retry_count: int = 0,
     ) -> PhaseExecution:
         config = get_phase_config(phase)
         self.services.logger.log(f"phase start: {phase.value}")
@@ -84,6 +86,8 @@ class PhaseExecutor:
             authority=authority,
             max_turns=config.max_turns,
             timeout_seconds=config.timeout_seconds,
+            complexity=complexity,
+            retry_count=retry_count,
         )
         started = monotonic()
         try:

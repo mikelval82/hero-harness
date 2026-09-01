@@ -125,7 +125,8 @@ class FakePhaseExecutor:
         self.next_review_verdict = next_review_verdict
         self.phases: list[str] = []
 
-    def run(self, phase, variables=None):
+    def run(self, phase, variables=None, complexity=None, retry_count=0):
+        del complexity, retry_count
         self.phases.append(phase.value if hasattr(phase, "value") else str(phase))
         if "review" in str(phase.value if hasattr(phase, "value") else phase).lower():
             self.artifacts.write_text(

@@ -14,6 +14,7 @@ from mission_orchestrator.application.errors import (
     PhaseTimeout,
 )
 from mission_orchestrator.domain.command import CommandKind
+from mission_orchestrator.domain.provider_outcome import ProviderOutcomeError
 from mission_orchestrator.domain.conversation import ConversationRole
 from mission_orchestrator.domain.phase import PhaseResult
 from mission_orchestrator.ports.agent_client import AgentRequest, ConversationRequest
@@ -99,11 +100,18 @@ class DeepSeekAgentClient:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "elapsed_seconds": round(monotonic() - started, 3),
+                    "requested_model": self.model,
+                    "served_model": str(getattr(response, "model", "") or "unknown"),
                 },
             )
-            assistant_message, tool_calls, text = self._normalize_message(
-                response.choices[0].message
-            )
+            if not getattr(response, "choices", None):
+                raise ProviderOutcomeError("malformed DeepSeek response: missing choices")
+            choice = response.choices[0]
+            assistant_message, tool_calls, text = self._normalize_message(choice.message)
+            finish_reason = str(getattr(choice, "finish_reason", "") or "")
+            expected = "tool_calls" if tool_calls else "stop"
+            if finish_reason != expected:
+                raise ProviderOutcomeError(f"unaccepted DeepSeek outcome: {finish_reason or 'missing finish_reason'}")
             last_text = text or last_text
             if tool_calls:
                 messages.append(assistant_message)

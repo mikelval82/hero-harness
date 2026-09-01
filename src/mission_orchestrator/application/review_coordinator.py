@@ -49,6 +49,8 @@ class ReviewCoordinator:
             block = self.phase_executor.run(
                 PhaseName.REIMPLEMENT,
                 variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                complexity=task.complexity.value,
+                retry_count=max(0, self._verdict_attempts.get(task.id, 1) - 1),
             ).block
             if block:
                 return block
@@ -202,12 +204,16 @@ class ReviewCoordinator:
         block = self.phase_executor.run(
             PhaseName.REIMPLEMENT,
             variables={"TASK_ID": task.id, "TASK_TITLE": task.title, "REVIEW_FEEDBACK": feedback},
+            complexity=task.complexity.value,
+            retry_count=max(0, self._verdict_attempts.get(task.id, 1) - 1),
         ).block
         if block:
             return block
         return self.phase_executor.run(
             PhaseName.REVIEW,
             variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+            complexity=task.complexity.value,
+            retry_count=max(0, self._verdict_attempts.get(task.id, 1) - 1),
         ).block
 
     def _wait_resume_or_abort(self) -> BlockReason | None:

@@ -12,6 +12,7 @@ from mission_orchestrator.application.errors import (
     PhaseTimeout,
 )
 from mission_orchestrator.domain.command import CommandKind
+from mission_orchestrator.domain.provider_outcome import ProviderOutcomeError
 from mission_orchestrator.domain.conversation import ConversationRole
 from mission_orchestrator.domain.phase import PhaseResult
 from mission_orchestrator.ports.agent_client import AgentRequest, ConversationRequest
@@ -84,9 +85,16 @@ class AnthropicAgentClient:
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                     "elapsed_seconds": round(monotonic() - started, 3),
+                    "requested_model": self.model,
+                    "served_model": str(getattr(response, "model", "") or "unknown"),
                 },
             )
             assistant_content, tool_calls, text = self._normalize_content(response.content)
+            stop_reason = str(getattr(response, "stop_reason", "") or "")
+            if tool_calls and stop_reason != "tool_use":
+                raise ProviderOutcomeError(f"malformed Anthropic tool response: {stop_reason or 'missing stop_reason'}")
+            if not tool_calls and stop_reason != "end_turn":
+                raise ProviderOutcomeError(f"unaccepted Anthropic outcome: {stop_reason or 'missing stop_reason'}")
             last_text = text or last_text
             if tool_calls:
                 messages.append({"role": "assistant", "content": assistant_content})
