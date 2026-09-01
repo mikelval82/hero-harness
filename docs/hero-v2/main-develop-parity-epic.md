@@ -207,6 +207,8 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 **Depende de:** R1.
 
+**Contrato:** [O4 routing provider-neutral](specs/O4-model-routing.md). La implementacion queda pendiente; el contrato separa la politica y los outcomes de O4 de precios y presupuesto de O5.
+
 ### O5 — Coste y token budget
 
 - [ ] Coste calculado con modelo servido y catálogo versionado.
