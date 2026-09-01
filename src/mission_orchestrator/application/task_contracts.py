@@ -4,6 +4,7 @@ import json
 import re
 
 from mission_orchestrator.domain.task import Task
+from mission_orchestrator.application.validation_obligations import compile_validation_obligations
 from mission_orchestrator.ports.artifacts import ArtifactStore
 
 
@@ -74,6 +75,7 @@ class TaskContractCompiler:
                 "operations": covered,
                 "nodes": task_nodes,
                 "relationships": relationships,
+                "validation_obligations": compile_validation_obligations(task_nodes),
             }
             encoded = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
             path = f"task-contracts/{snapshot_id}/{task.id}.json"

@@ -134,6 +134,29 @@ class TaskContractCompilerTest(unittest.TestCase):
         self.assertEqual(payload["base_commit"], "abc123")
         self.assertEqual(payload["requirements"], ["REQ-2", "REQ-7"])
         self.assertEqual(
+            payload["validation_obligations"],
+            [
+                {
+                    "check_id": "target_validation",
+                    "expected": "Module can be imported",
+                    "id": "VO:telegram-module:1",
+                    "kind": "trusted_command",
+                    "provenance": "task_contract",
+                    "requirement_ids": ["ACC:telegram-module:1", "REQ-2"],
+                    "target": "src/telegram/notifier.py",
+                },
+                {
+                    "check_id": "target_validation",
+                    "expected": "Message delivery is reported",
+                    "id": "VO:telegram-notifier:1",
+                    "kind": "trusted_command",
+                    "provenance": "task_contract",
+                    "requirement_ids": ["ACC:telegram-notifier:1", "REQ-7"],
+                    "target": "src/telegram/notifier.py",
+                },
+            ],
+        )
+        self.assertEqual(
             [operation["id"] for operation in payload["operations"]],
             ["create:telegram-notifier"],
         )

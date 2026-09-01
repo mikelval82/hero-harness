@@ -176,10 +176,10 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### O2 — Obligaciones deterministas de validación
 
-- [ ] Criterios bloqueantes enlazados a `ValidationObligation` tipada.
-- [ ] `check_id` resuelto contra configuración confiable.
-- [ ] PASS/FAIL/NOT_RUN y evidencia terminal.
-- [ ] FAIL bloquea; NOT_RUN requiere evidencia alternativa explícita.
+- [x] Criterios bloqueantes enlazados a `ValidationObligation` tipada.
+- [x] `check_id` resuelto contra configuración confiable.
+- [x] PASS/FAIL/NOT_RUN y evidencia terminal.
+- [x] FAIL bloquea; NOT_RUN requiere evidencia alternativa explícita.
 
 **Prioridad:** P1.
 
