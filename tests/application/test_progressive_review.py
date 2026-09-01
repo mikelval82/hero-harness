@@ -1,5 +1,3 @@
-import pytest
-
 from mission_orchestrator.application.progressive_review import (
     ProgressiveReviewExperiment,
     ReviewObservation,
@@ -28,5 +26,9 @@ def test_shadow_review_blocks_omissions_rework_and_misaligned_corpus():
     assert metrics.blocking_findings_omitted == 1
     assert metrics.downstream_rework == 1
     assert metrics.non_inferior is False
-    with pytest.raises(ValueError):
+    try:
         ProgressiveReviewExperiment().evaluate(baseline, [_case("other", set(), set())])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("misaligned corpus was accepted")
