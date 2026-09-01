@@ -212,6 +212,9 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     query = parse_qs(parsed.query)
                     after = _integer_query(query, "after", 0)
                     self._json(server.control.messages(after_sequence=after))
+                elif parsed.path.startswith(f"{API_PREFIX}/ask/"):
+                    operation_id = unquote(parsed.path.removeprefix(f"{API_PREFIX}/ask/"))
+                    self._json(server.control.ask_operation(operation_id))
                 elif parsed.path == f"{API_PREFIX}/contracts/tasks":
                     self._json(server.control.contract_tasks())
                 elif parsed.path.startswith(f"{API_PREFIX}/contracts/tasks/"):
@@ -329,6 +332,8 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     self._json(payload, status)
                 elif parsed.path == f"{API_PREFIX}/code-graph/query":
                     self._json(server.control.code_graph_query(body))
+                elif parsed.path == f"{API_PREFIX}/ask":
+                    self._json(server.control.ask(str(body.get("question", ""))), HTTPStatus.ACCEPTED)
                 elif parsed.path == f"{API_PREFIX}/commands":
                     self._json(server.control.submit_command(str(body["text"])))
                 else:

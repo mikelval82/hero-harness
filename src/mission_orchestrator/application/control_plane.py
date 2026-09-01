@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.application.code_graph_queries import query_mission_code_graph
+from mission_orchestrator.application.code_questions import CodeQuestionService
 from mission_orchestrator.application.contract_execution import ContractExecutionService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
@@ -33,6 +34,7 @@ class MissionControlPlane:
     tasks: InteractiveTaskCoordinator
     conversation: ConversationLog = field(default_factory=NullConversationLog)
     executions: ContractExecutionService | None = None
+    questions: CodeQuestionService | None = None
 
     def capabilities(self) -> dict[str, object]:
         return {
@@ -56,6 +58,7 @@ class MissionControlPlane:
                 "safe_design_amendments": True,
                 "contract_execution": True,
                 "code_graph_queries": True,
+                "read_only_ask": self.questions is not None,
             },
             "event_wait_seconds": 30,
         }
@@ -89,6 +92,12 @@ class MissionControlPlane:
 
     def code_graph_query(self, request: dict) -> dict[str, object]:
         return query_mission_code_graph(self.context.harness_dir, request)
+
+    def ask(self, question: str) -> dict[str, object]:
+        return self._question_service().submit(question)
+
+    def ask_operation(self, operation_id: str) -> dict[str, object]:
+        return self._question_service().get(operation_id)
 
     def contract_tasks(self) -> dict[str, object]:
         return self._execution_service().list_tasks()
@@ -278,6 +287,11 @@ class MissionControlPlane:
             sessions=self.sessions,
         )
 
+    def _question_service(self) -> CodeQuestionService:
+        if self.questions is None:
+            raise ValueError("read-only ask is not available")
+        return self.questions
+
     def _record_design_amendment(self, design_revision: int) -> str:
         current = self.sessions.load(self.context.mission_tag)
         if current.stage in {MissionStage.EXECUTING, MissionStage.RECONCILING}:
@@ -381,4 +395,5 @@ def control_plane_for(runtime) -> MissionControlPlane:  # noqa: ANN001
             context=runtime.context,
             sessions=sessions,
         ),
+        questions=CodeQuestionService(runtime.services, runtime.context),
     )
