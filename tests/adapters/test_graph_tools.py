@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from mission_orchestrator.adapters.analysis.builder import CodeGraphBuilder
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
-from mission_orchestrator.adapters.tools.graph_tools import GraphProposeTool, GraphQueryTool
+from mission_orchestrator.adapters.tools.graph_tools import CodeGraphTool, GraphProposeTool, GraphQueryTool
 from mission_orchestrator.adapters.tools.registry import default_tool_registry
 from mission_orchestrator.application.phase_registry import PHASES
 from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
@@ -43,6 +43,7 @@ class GraphToolsTest(unittest.TestCase):
         self.harness = Path(self._harness_tmp.name)
         self.env = ToolEnvironment(self.project, self.harness)
         self.query = GraphQueryTool()
+        self.code_graph = CodeGraphTool()
         self.propose = GraphProposeTool()
 
     def tearDown(self) -> None:
@@ -128,17 +129,40 @@ class GraphToolsTest(unittest.TestCase):
         ids = {match["id"] for match in result["matches"]}
         self.assertIn("mod.py:Real", ids)
 
+    def test_o1_code_graph_is_bounded_and_reads_the_fixed_mission_db(self) -> None:
+        (self.project / "mod.py").write_text(
+            "class Base:\n    pass\n\nclass Child(Base):\n    pass\n",
+            encoding="utf-8",
+        )
+        facts = SQLiteCodeGraph(self.harness / "code_graph.db")
+        CodeGraphBuilder(facts).build(self.project)
+        result = json.loads(self.code_graph.execute({"action": "dependencies", "node": "mod.py"}, self.env))
+        self.assertEqual(result["columns"], ["relation", "type", "id", "file"])
+        self.assertEqual(
+            result["rows"],
+            [
+                ["defines", "class", "mod.py:Base", "mod.py"],
+                ["defines", "class", "mod.py:Child", "mod.py"],
+            ],
+        )
+        self.assertGreater(result["observed_revision"], 0)
+        with self.assertRaises(ValueError):
+            self.code_graph.execute({"action": "dead_code", "db": "outside.db"}, self.env)
+        with self.assertRaises(ValueError):
+            self.code_graph.execute({"action": "find_nodes", "pattern": "Base", "limit": 201}, self.env)
+
     def test_b7_registration_and_phase_wiring(self) -> None:
         registry = default_tool_registry()
         schemas = registry.schemas_for(
             PhaseAuthority(
                 PhaseName.RESEARCH,
-                ("GraphQuery", "GraphPropose"),
+                ("CodeGraph", "GraphQuery", "GraphPropose"),
                 harness_mutation_tools=("GraphPropose",),
             )
         )
-        self.assertEqual({schema["name"] for schema in schemas}, {"GraphQuery", "GraphPropose"})
+        self.assertEqual({schema["name"] for schema in schemas}, {"CodeGraph", "GraphQuery", "GraphPropose"})
         for phase in (PhaseName.RESEARCH, PhaseName.GRILL):
+            self.assertIn("CodeGraph", PHASES[phase].tools)
             self.assertIn("GraphQuery", PHASES[phase].tools)
             self.assertIn("GraphPropose", PHASES[phase].tools)
         for phase in (PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT):

@@ -327,6 +327,8 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     elif payload["status"] == ApplyStatus.REJECTED.value:
                         status = HTTPStatus.UNPROCESSABLE_ENTITY
                     self._json(payload, status)
+                elif parsed.path == f"{API_PREFIX}/code-graph/query":
+                    self._json(server.control.code_graph_query(body))
                 elif parsed.path == f"{API_PREFIX}/commands":
                     self._json(server.control.submit_command(str(body["text"])))
                 else:
