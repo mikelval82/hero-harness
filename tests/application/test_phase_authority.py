@@ -80,7 +80,7 @@ class PhaseAuthorityTest(unittest.TestCase):
 
         self.assertEqual(
             {schema["name"] for schema in research},
-            {"Read", "Glob", "Grep", "Write", "GraphQuery", "GraphPropose"},
+            {"Read", "Glob", "Grep", "Write", "CodeGraph", "GraphQuery", "GraphPropose"},
         )
         self.assertEqual(
             {schema["name"] for schema in review},

@@ -26,6 +26,7 @@ def openapi_document() -> dict[str, object]:
             {"name": "Mission", "description": "Mission state and actions"},
             {"name": "Documents", "description": "Versioned mission documents"},
             {"name": "Design", "description": "Editable design map"},
+            {"name": "Code graph", "description": "Bounded observed-code queries"},
             {"name": "Conversation", "description": "Interactive conversation"},
             {"name": "Contracts", "description": "Pinned task contracts and execution leases"},
         ],
@@ -75,6 +76,14 @@ def openapi_document() -> dict[str, object]:
             "/design": {"get": _read_operation("Design snapshot", "designSnapshot", "Design")},
             "/design/operations": {
                 "post": _write_operation("Apply design operations", "applyDesignOperations", "Design", command_response)
+            },
+            "/code-graph/query": {
+                "post": _write_operation(
+                    "Query the fixed observed code graph without mutation",
+                    "queryCodeGraph",
+                    "Code graph",
+                    command_response,
+                )
             },
             "/documents/{logical_id}": {
                 "get": _read_operation(

@@ -161,14 +161,18 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### O1 — Consultas del grafo factual
 
-- [ ] `find_nodes`, dependencies, dependents, impact y dead code.
-- [ ] API read-only, acotada y con `observed_revision`.
-- [ ] Sin SQL, build, shell o path de DB controlado por el modelo.
-- [ ] Graph Lab y agentes consumen el mismo contrato.
+- [x] `find_nodes`, dependencies, dependents, impact y dead code.
+- [x] API read-only, acotada y con `observed_revision`.
+- [x] Sin SQL, build, shell o path de DB controlado por el modelo.
+- [x] Graph Lab y agentes consumen el mismo contrato.
 
 **Prioridad:** P1.
 
 **Depende de:** R1.
+
+**Evidencia:** [contrato O1 de consultas factuales](specs/O1-factual-code-graph.md), tool `CodeGraph` y `POST /api/v1/code-graph/query` sobre el `code_graph.db` fijo de la misión. Las pruebas cubren el mismo resultado, el límite de 200 filas, `observed_revision`, el rechazo de `sql`/`db` y cierre de SQLite en Windows.
+
+**Riesgo residual:** el extractor no resuelve de forma semántica todas las llamadas, imports ni bases de herencia; O1 devuelve sólo IDs observados exactos y conserva los fuentes como autoridad. Graph Lab obtiene el contrato mediante capabilities/OpenAPI, pero la interfaz todavía no añade una visualización específica de impacto.
 
 ### O2 — Obligaciones deterministas de validación
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.design.store import DesignStore
+from mission_orchestrator.application.code_graph_queries import query_mission_code_graph
 from mission_orchestrator.application.contract_execution import ContractExecutionService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
@@ -54,6 +55,7 @@ class MissionControlPlane:
                 "interactive_task_gates": True,
                 "safe_design_amendments": True,
                 "contract_execution": True,
+                "code_graph_queries": True,
             },
             "event_wait_seconds": 30,
         }
@@ -84,6 +86,9 @@ class MissionControlPlane:
             },
             "contract_execution": self._execution_service().current_execution(),
         }
+
+    def code_graph_query(self, request: dict) -> dict[str, object]:
+        return query_mission_code_graph(self.context.harness_dir, request)
 
     def contract_tasks(self) -> dict[str, object]:
         return self._execution_service().list_tasks()

@@ -9,6 +9,8 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from mission_orchestrator.adapters.control.http_server import ControlHttpServer
+from mission_orchestrator.adapters.analysis.builder import CodeGraphBuilder
+from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.documents.sqlite_catalog import SqliteDocumentCatalog
 from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemArtifactStore
 from mission_orchestrator.adapters.filesystem.session_store import FilesystemMissionSessionStore
@@ -82,7 +84,9 @@ class ControlHttpServerTest(unittest.TestCase):
             self.assertEqual(contract["openapi"], "3.0.3")
             self.assertIn("/documents/{logical_id}", contract["paths"])
             self.assertIn("/contracts/tasks", contract["paths"])
+            self.assertIn("/code-graph/query", contract["paths"])
             self.assertTrue(capabilities["features"]["versioned_documents"])
+            self.assertTrue(capabilities["features"]["code_graph_queries"])
             contract_tasks = self._request(server, "/api/v1/contracts/tasks")
             contract_task = self._request(server, "/api/v1/contracts/tasks/T-1")
             self.assertEqual(contract_tasks["tasks"][0]["id"], "T-1")
@@ -105,6 +109,25 @@ class ControlHttpServerTest(unittest.TestCase):
             self.assertEqual(saved["status"], "APPLIED")
             self.assertEqual(document["content"], "# HTTP idea\n")
             self.assertEqual(snapshot["documents"][0]["revision"], 1)
+
+            (context.project_dir / "facts.py").write_text("class Observed:\n    pass\n", encoding="utf-8")
+            CodeGraphBuilder(SQLiteCodeGraph(context.harness_dir / "code_graph.db")).build(context.project_dir)
+            graph = self._request(
+                server,
+                "/api/v1/code-graph/query",
+                method="POST",
+                body={"action": "find_nodes", "pattern": "Observed"},
+            )
+            self.assertEqual(graph["rows"], [["class", "facts.py:Observed", "facts.py"]])
+            self.assertGreater(graph["observed_revision"], 0)
+            with self.assertRaises(HTTPError) as invalid:
+                self._request(
+                    server,
+                    "/api/v1/code-graph/query",
+                    method="POST",
+                    body={"action": "dead_code", "sql": "SELECT 1"},
+                )
+            self.assertEqual(invalid.exception.code, 400)
 
     @staticmethod
     def _request(

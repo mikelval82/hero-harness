@@ -5,7 +5,7 @@ from mission_orchestrator.domain.phase import PhaseConfig, PhaseName
 READ_TOOLS = ("Read", "Glob", "Grep")
 ARTIFACT_TOOLS = (*READ_TOOLS, "Write")
 IMPL_TOOLS = (*ARTIFACT_TOOLS, "Edit", "Bash")
-DESIGN_TOOLS = (*ARTIFACT_TOOLS, "GraphQuery", "GraphPropose")
+DESIGN_TOOLS = (*ARTIFACT_TOOLS, "CodeGraph", "GraphQuery", "GraphPropose")
 REVIEW_TOOLS = (*ARTIFACT_TOOLS, "RunValidation")
 
 GRAPH = "__graph_instructions__"
