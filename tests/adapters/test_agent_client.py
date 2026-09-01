@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from mission_orchestrator.adapters.anthropic.client import AnthropicAgentClient
 from mission_orchestrator.application.errors import ApiUsageLimitExceeded
 from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
+from mission_orchestrator.domain.provider_outcome import ProviderOutcomeError
 from mission_orchestrator.ports.agent_client import AgentRequest
 from mission_orchestrator.ports.tool_registry import ToolAuthorizationError
 
@@ -88,10 +89,12 @@ class ToolErrorHandlingTest(unittest.TestCase):
         responses = [
             SimpleNamespace(
                 content=[_tool_use("t1", "Bash", {"command": "dir /s"})],
+                stop_reason="tool_use",
                 usage=SimpleNamespace(input_tokens=1, output_tokens=1),
             ),
             SimpleNamespace(
                 content=[_text("recovered")],
+                stop_reason="end_turn",
                 usage=SimpleNamespace(input_tokens=1, output_tokens=1),
             ),
         ]
@@ -118,10 +121,12 @@ class ToolErrorHandlingTest(unittest.TestCase):
         responses = [
             SimpleNamespace(
                 content=[_tool_use("t1", "Nope", {})],
+                stop_reason="tool_use",
                 usage=SimpleNamespace(input_tokens=1, output_tokens=1),
             ),
             SimpleNamespace(
                 content=[_text("done")],
+                stop_reason="end_turn",
                 usage=SimpleNamespace(input_tokens=1, output_tokens=1),
             ),
         ]
@@ -139,6 +144,7 @@ class ToolErrorHandlingTest(unittest.TestCase):
         responses = [
             SimpleNamespace(
                 content=[_tool_use("t1", "Edit", {"file_path": "src/app.py"})],
+                stop_reason="tool_use",
                 usage=SimpleNamespace(input_tokens=1, output_tokens=1),
             )
         ]
@@ -148,6 +154,11 @@ class ToolErrorHandlingTest(unittest.TestCase):
         )
 
         with self.assertRaises(ToolAuthorizationError):
+            client.run_phase(_request())
+
+    def test_truncated_response_is_rejected(self) -> None:
+        client = _make_client([SimpleNamespace(content=[_text("partial")], stop_reason="max_tokens", usage=SimpleNamespace(input_tokens=1, output_tokens=1))], _FakeRegistry(KeyError("unused")))
+        with self.assertRaisesRegex(ProviderOutcomeError, "max_tokens"):
             client.run_phase(_request())
 
 

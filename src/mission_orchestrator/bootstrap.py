@@ -23,6 +23,8 @@ from mission_orchestrator.adapters.git.service import MUTATING_MODES, Subprocess
 from mission_orchestrator.adapters.telegram.notifier import TelegramNotifier
 from mission_orchestrator.adapters.tools.registry import default_tool_registry
 from mission_orchestrator.application.gate_evaluator import MarkdownGateEvaluator
+from mission_orchestrator.application.model_policy import DeterministicModelPolicy
+from mission_orchestrator.application.policy_agent import PolicyAgentClient
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.mission import GateMode, MissionContext, MissionMode
 from mission_orchestrator.ports.tool_registry import ToolEnvironment
@@ -112,6 +114,13 @@ def build_runtime(config: RuntimeConfig) -> MissionRuntime:
         )
     else:
         raise ValueError(f"unsupported HARNESS provider: {provider}")
+    selected_model = model or agent.model
+    agent = PolicyAgentClient(
+        agent=agent,
+        policy=DeterministicModelPolicy(provider, forced_model=model),
+        capabilities={provider: {"cheap": selected_model, "default": selected_model, "deep": selected_model}},
+        events=events,
+    )
     repo_root = Path(__file__).resolve().parents[2]
     prompts = FilesystemPromptRenderer(
         repo_root / "prompts",

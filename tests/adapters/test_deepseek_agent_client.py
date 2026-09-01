@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from mission_orchestrator.adapters.deepseek.client import DeepSeekAgentClient
 from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
+from mission_orchestrator.domain.provider_outcome import ProviderOutcomeError
 from mission_orchestrator.ports.agent_client import AgentRequest
 from mission_orchestrator.ports.tool_registry import ToolAuthorizationError
 
@@ -34,6 +35,7 @@ def _response(*, text: str = "", tool_calls: list | None = None) -> SimpleNamesp
     return SimpleNamespace(
         choices=[
             SimpleNamespace(
+                finish_reason="tool_calls" if tool_calls else "stop",
                 message=SimpleNamespace(content=text, tool_calls=tool_calls or [])
             )
         ],
@@ -129,6 +131,21 @@ class DeepSeekAgentClientTest(unittest.TestCase):
                     timeout_seconds=30,
                 )
             )
+
+    def test_truncated_response_is_rejected(self) -> None:
+        response = _response(text="partial")
+        response.choices[0].finish_reason = "length"
+        client = DeepSeekAgentClient.__new__(DeepSeekAgentClient)
+        client.tools = _Registry()
+        client.tool_env = None
+        client.command_bus = None
+        client.model = "deepseek-v4-flash"
+        client.max_tokens = 256
+        client.max_retries = 1
+        client.events = SimpleNamespace(publish=lambda kind, payload: None)
+        client._client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions([response])))
+        with self.assertRaisesRegex(ProviderOutcomeError, "length"):
+            client.run_phase(AgentRequest("test", "", "", (), [], PhaseAuthority(PhaseName.RESEARCH, ()), 1, 30))
 
 
 if __name__ == "__main__":

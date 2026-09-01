@@ -128,6 +128,7 @@ class TaskExecutor:
                 block = self.phase_executor.run(
                     phase,
                     variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                    complexity=task.complexity.value,
                 ).block
             if phase == PhaseName.PLAN and not self.services.artifacts.exists("decisions.md"):
                 self.services.artifacts.write_text("decisions.md", "# Decisions\n\n(not available yet)\n")
