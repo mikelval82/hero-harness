@@ -79,7 +79,19 @@ class GatesAndMarkdownTest(unittest.TestCase):
             ]
         }
         audit = "# Audit\n\n## Verdict\nAPPROVED\n\nNotes\n**STATUS: DONE**\n"
-        store = MemoryArtifacts({"audit.md": audit, "task-contract.json": json.dumps(contract)})
+        review_evidence = {
+            "schema_version": 1,
+            "claims": [],
+            "checks": [
+                {"id": "hardcoding", "status": "pass", "evidence_refs": ["src/example.py:1"]},
+                {"id": "special_casing", "status": "pass", "evidence_refs": ["src/example.py:1"]},
+                {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+            ],
+            "failures": [],
+        }
+        store = MemoryArtifacts(
+            {"audit.md": audit, "task-contract.json": json.dumps(contract), "review-evidence.json": json.dumps(review_evidence)}
+        )
         missing = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
         self.assertFalse(missing.passed)
         self.assertIn("NOT_RUN", missing.detail)
@@ -96,6 +108,87 @@ class GatesAndMarkdownTest(unittest.TestCase):
         )
         passed = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
         self.assertTrue(passed.passed, passed.detail)
+
+    def test_review_gate_rejects_approved_evaluation_check_that_did_not_run(self) -> None:
+        audit = "# Audit\n\n## Verdict\nAPPROVED\n\nNotes\n**STATUS: DONE**\n"
+        store = MemoryArtifacts(
+            {
+                "audit.md": audit,
+                "review-evidence.json": json.dumps(
+                    {
+                        "schema_version": 1,
+                        "claims": [],
+                        "checks": [
+                            {"id": "hardcoding", "status": "not_run", "evidence_refs": ["reason"]},
+                            {"id": "special_casing", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                            {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+                        ],
+                        "failures": [],
+                    }
+                ),
+            }
+        )
+        result = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertFalse(result.passed)
+        self.assertIn("NOT_RUN", result.detail)
+
+    def test_review_gate_rejects_approved_unsupported_claim(self) -> None:
+        audit = "# Audit\n\n## Verdict\nAPPROVED\n\nNotes\n**STATUS: DONE**\n"
+        store = MemoryArtifacts(
+            {
+                "audit.md": audit,
+                "review-evidence.json": json.dumps(
+                    {
+                        "schema_version": 1,
+                        "claims": [
+                            {
+                                "id": "C1",
+                                "statement": "The implementation is safe.",
+                                "status": "unsupported",
+                                "evidence_refs": ["src/a.py:1"],
+                            }
+                        ],
+                        "checks": [
+                            {"id": "hardcoding", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                            {"id": "special_casing", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                            {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+                        ],
+                        "failures": [],
+                    }
+                ),
+            }
+        )
+        result = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertFalse(result.passed)
+        self.assertIn("unsupported claims", result.detail)
+
+    def test_review_gate_requires_taxonomy_for_non_approved_review(self) -> None:
+        audit = "# Audit\n\n## Verdict\nMINOR_CHANGES\n\nNotes\n**STATUS: DONE**\n"
+        evidence = {
+            "schema_version": 1,
+            "claims": [],
+            "checks": [
+                {"id": "hardcoding", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                {"id": "special_casing", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+            ],
+            "failures": [],
+        }
+        store = MemoryArtifacts({"audit.md": audit, "review-evidence.json": json.dumps(evidence)})
+        missing_taxonomy = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertFalse(missing_taxonomy.passed)
+        self.assertIn("requires failure taxonomy", missing_taxonomy.detail)
+
+        evidence["failures"] = [
+            {
+                "id": "F1",
+                "failure_type": "technical_bug",
+                "recoverability_lost_at_stage": "implement",
+                "evidence_refs": ["src/a.py:1"],
+            }
+        ]
+        store.files["review-evidence.json"] = json.dumps(evidence)
+        self.assertTrue(MarkdownGateEvaluator(store).evaluate("review", "audit.md").passed)
 
 
 if __name__ == "__main__":

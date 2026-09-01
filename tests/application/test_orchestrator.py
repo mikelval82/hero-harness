@@ -67,6 +67,21 @@ class FakeAgent:
                 self.artifacts.write_text("status.md", "# Status\n\n## Files\n- ok.py\n\n**STATUS: DONE**\n")
         elif phase == "review":
             self.artifacts.write_text("audit.md", "# Audit\n\n## Verdict\nAPPROVED\n\n**STATUS: DONE**\n")
+            self.artifacts.write_text(
+                "review-evidence.json",
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "claims": [],
+                        "checks": [
+                            {"id": "hardcoding", "status": "pass", "evidence_refs": ["ok.py:1"]},
+                            {"id": "special_casing", "status": "pass", "evidence_refs": ["ok.py:1"]},
+                            {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+                        ],
+                        "failures": [],
+                    }
+                ),
+            )
         elif phase in {"report", "report_plan"}:
             self.artifacts.write_text("mission-report.md", "# Report\n\nDone\n")
         elif phase == "compact":

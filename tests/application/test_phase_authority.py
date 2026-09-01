@@ -52,7 +52,7 @@ class PhaseAuthorityTest(unittest.TestCase):
             PhaseName.PLAN: ("plan.md", "decisions.md"),
             PhaseName.IMPLEMENT: ("status.md",),
             PhaseName.IMPLEMENT_BURSTS: ("_burst_progress.md", "status.md"),
-            PhaseName.REVIEW: ("audit.md",),
+            PhaseName.REVIEW: ("audit.md", "review-evidence.json"),
             PhaseName.REIMPLEMENT: ("status.md",),
             PhaseName.COMPACT: ("_compact_tmp.md",),
             PhaseName.CONSOLIDATE: ("tasks.json",),

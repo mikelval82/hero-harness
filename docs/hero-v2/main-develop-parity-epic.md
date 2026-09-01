@@ -187,10 +187,10 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### O3 — Review con evidencia y taxonomía
 
-- [ ] Claims anclados a receipts, paths o resultados observados.
-- [ ] Checks de hardcoding, special-casing y scope.
-- [ ] Failure taxonomy y etapa donde se perdió recuperabilidad.
-- [ ] Verificador estructural conserva autoridad independiente.
+- [x] Claims anclados a receipts, paths o resultados observados.
+- [x] Checks de hardcoding, special-casing y scope.
+- [x] Failure taxonomy y etapa donde se perdió recuperabilidad.
+- [x] Verificador estructural conserva autoridad independiente.
 
 **Prioridad:** P1.
 

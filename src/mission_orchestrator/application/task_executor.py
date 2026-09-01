@@ -24,6 +24,8 @@ STALE_TASK_ARTIFACTS = (
     "decisions.md",
     "status.md",
     "audit.md",
+    "review-evidence.json",
+    "review-receipt.json",
     "contract-verification.json",
     "_burst_progress.md",
     TASK_CONTRACT_ALIAS,

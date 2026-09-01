@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -131,6 +132,7 @@ class FakePhaseExecutor:
                 "audit.md",
                 f"# Audit\n\n## Verdict\n{self.next_review_verdict}\n\n**STATUS: DONE**\n",
             )
+            self.artifacts.write_text("review-evidence.json", _review_evidence(self.next_review_verdict))
 
         class _Result:
             block = None
@@ -152,15 +154,41 @@ def _review_setup(tmp: Path, verdict: str):
     services.tasks.save([Task("T-1", "one")])
     services.artifacts.write_text("status.md", "# Status\n\n## Files\n- ok.py\n\n**STATUS: DONE**\n")
     services.artifacts.write_text("audit.md", f"# Audit\n\n## Verdict\n{verdict}\n\n**STATUS: DONE**\n")
+    services.artifacts.write_text("review-evidence.json", _review_evidence(verdict))
     executor = FakePhaseExecutor(services.artifacts)
     coordinator = ReviewCoordinator(services, context, executor, _NoopCompactor())
     return coordinator, logger, services
 
 
+def _review_evidence(verdict: str) -> str:
+    approved = verdict.upper() == "APPROVED"
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "claims": [],
+            "checks": [
+                {"id": "hardcoding", "status": "pass", "evidence_refs": ["ok.py:1"]},
+                {"id": "special_casing", "status": "pass", "evidence_refs": ["ok.py:1"]},
+                {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+            ],
+            "failures": []
+            if approved
+            else [
+                {
+                    "id": "F1",
+                    "failure_type": "technical_bug",
+                    "recoverability_lost_at_stage": "implement",
+                    "evidence_refs": ["ok.py:1"],
+                }
+            ],
+        }
+    )
+
+
 class ReviewTelemetryTest(unittest.TestCase):
     def test_d4_initial_verdicts_are_recorded(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
-            coordinator, logger, _ = _review_setup(Path(raw), "APPROVED")
+            coordinator, logger, services = _review_setup(Path(raw), "APPROVED")
             self.assertIsNone(coordinator.commit_or_request_human(0, Task("T-1", "one")))
             verdicts = logger.events("review_verdict")
             self.assertEqual(len(verdicts), 1)
@@ -168,6 +196,10 @@ class ReviewTelemetryTest(unittest.TestCase):
             self.assertEqual(verdicts[0]["verdict"], "APPROVED")
             self.assertEqual(verdicts[0]["attempt"], 1)
             self.assertEqual(logger.events("rework"), [])
+            receipt = json.loads(services.artifacts.read_text("review-receipt.json"))
+            self.assertEqual(receipt["verdict"], "APPROVED")
+            self.assertTrue(receipt["audit"]["exists"])
+            self.assertEqual(receipt["review_evidence"]["checks"][0]["id"], "hardcoding")
 
     def test_d4_minor_changes_emits_rework(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
