@@ -11,6 +11,7 @@ from mission_orchestrator.application.markdown_contracts import (
     status_files,
 )
 from mission_orchestrator.application.phase_executor import PhaseExecutor
+from mission_orchestrator.application.review_receipt import ReviewReceiptWriter
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.block import BlockKind, BlockReason
 from mission_orchestrator.domain.command import CommandKind
@@ -75,6 +76,11 @@ class ReviewCoordinator:
         verification = self._verify_contract()
         if verification is not None:
             return verification
+        if self.services.artifacts.exists("review-evidence.json"):
+            try:
+                ReviewReceiptWriter(self.services.artifacts, self.services.git).write()
+            except (ValueError, OSError) as error:
+                return BlockReason(BlockKind.GATE_FAIL, "review_receipt", str(error))
         self.services.notifier.notify(f"Task approved: {task.id} {task.title}")
         self._stage_status_files()
         self.services.tasks.update(index, TaskStatus.COMPLETED)

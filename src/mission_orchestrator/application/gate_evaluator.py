@@ -6,6 +6,7 @@ import re
 from mission_orchestrator.domain.phase import GateResult
 from mission_orchestrator.domain.validation import ValidationKind, ValidationStatus
 from mission_orchestrator.application.validation_obligations import read_validation_obligations
+from mission_orchestrator.application.review_evidence import ReviewEvidence
 from mission_orchestrator.ports.artifacts import ArtifactStore
 
 
@@ -45,7 +46,17 @@ class MarkdownGateEvaluator:
             validation = self._validation_check()
             if validation:
                 return GateResult(False, validation)
+            review_evidence = self._review_evidence_check(text)
+            if review_evidence:
+                return GateResult(False, review_evidence)
         return GateResult(True, "")
+
+    def _review_evidence_check(self, audit_text: str) -> str:
+        try:
+            evidence = ReviewEvidence.from_json(self.artifacts.read_text("review-evidence.json"))
+        except (FileNotFoundError, ValueError) as exc:
+            return f"invalid review evidence: {exc}"
+        return evidence.gate_error(audit_text)
 
     def _validation_check(self) -> str:
         try:

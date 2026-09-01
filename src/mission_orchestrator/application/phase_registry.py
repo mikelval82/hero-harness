@@ -149,7 +149,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
             "TASK_CONTRACT": "task-contract.json",
             "GRAPH_INSTRUCTIONS": GRAPH,
         },
-        harness_write_paths=("audit.md",),
+        harness_write_paths=("audit.md", "review-evidence.json"),
     ),
     PhaseName.REIMPLEMENT: PhaseConfig(
         PhaseName.REIMPLEMENT,
