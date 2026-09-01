@@ -26,6 +26,8 @@ def mission_pipeline_for(mode: MissionMode, *, no_grill: bool) -> MissionPipelin
             task_loop=True,
             finalize=(PhaseName.REPORT_PLAN,),
         )
+    if mode == MissionMode.SPEC:
+        return MissionPipeline(init=(), task_loop=False, finalize=(PhaseName.SPEC, PhaseName.REPORT_PLAN))
     if mode == MissionMode.EXPLORE:
         return MissionPipeline(
             init=(PhaseName.RESEARCH,),
@@ -53,4 +55,3 @@ def task_pipeline_for(task: Task, mode: MissionMode) -> TaskPipeline:
 
 def mode_should_merge(mode: MissionMode) -> bool:
     return mode in {MissionMode.FULL, MissionMode.FOCUSED, MissionMode.HOTFIX}
-

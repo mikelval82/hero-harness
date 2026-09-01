@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
         RuntimeConfig(
             task=task,
             branch=branch,
-            mode=MissionMode(args.mode),
+            mode=MissionMode.parse(args.mode),
             project_dir=project_dir,
             gate_mode=GateMode.MANUAL if args.gate else GateMode.AUTO,
             no_grill=args.no_grill,
@@ -79,7 +79,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--project", required=True)
     parser.add_argument("--task", default="Graph Lab mission")
     parser.add_argument("--branch")
-    parser.add_argument("--mode", choices=[mode.value for mode in MissionMode], default="full")
+    parser.add_argument("--mode", choices=[*([mode.value for mode in MissionMode]), "spec-plan"], default="full")
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--no-grill", action="store_true")
     parser.add_argument("--max-tasks", type=int, default=20)

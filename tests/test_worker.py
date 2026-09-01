@@ -22,6 +22,10 @@ class WorkerArgumentsTest(unittest.TestCase):
         self.assertEqual(args.provider, "deepseek")
         self.assertEqual(args.model, "deepseek-v4-flash")
 
+    def test_worker_accepts_spec_plan_alias(self) -> None:
+        args = parse_args(["--project", ".", "--mode", "spec-plan"])
+        self.assertEqual(args.mode, "spec-plan")
+
 
 if __name__ == "__main__":
     unittest.main()
