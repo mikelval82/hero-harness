@@ -1,44 +1,17 @@
-TASK: {{TASK}}
+# Structure
 
-## Prompt Signature
+Mission: {{TASK}}
 
-- phase: structure.
-- inputs: `{{TASK}}`, `project-memory.md`, `retrieved-cases.md`, `retrieved-skills.md`, `brainstorm.md`, optional `brief.md`.
-- outputs: `tasks.json`.
-- responsibilities: convert research into ordered executable tasks with files, complexity, complexity_reason, and status.
-- editable_artifacts (requires_grad): `tasks.json`.
-
-## Brainstorm results (pre-loaded)
-
+Brainstorm:
 {{BRAINSTORM}}
 
-## Project memory (persistent per target project)
-
-{{PROJECT_MEMORY}}
-
-## Similar approved mission cases
-
-{{MISSION_CASES}}
-
-## Retrieved verified skills
-
-{{RETRIEVED_SKILLS}}
-
-Use project memory only to preserve repo-specific conventions, known constraints, and repeated failure modes. Do not create tasks solely because memory mentions a historical issue.
-Use retrieved cases only to inform task ordering, likely files, and validation patterns when the current mission is genuinely similar.
-Use retrieved skills only as procedural guidance for task shape and verification when the trigger matches this mission.
-
-## Mission brief (alignment from grill)
-
+Brief:
 {{BRIEF}}
 
-## Code graph
+ChangeSet (compiled from the approved design map, if any):
+{{CHANGESET}}
 
-{{GRAPH_INSTRUCTIONS}}
+Write `$CLAUDE_HARNESS/tasks.json` as a JSON list of objects with id, title, complexity, status, failure_reason, covers, dependencies and target_nodes.
 
-Complexity routing:
-- Every task in `tasks.json` must include `complexity` and `complexity_reason`.
-- Use `S` only for small, low-risk, well-scoped edits where implement-only is enough.
-- Use `M` for normal tasks that need spec, plan, implementation, and review.
-- Use `L` for broad, risky, or multi-step tasks that need burst implementation.
-- `complexity_reason` must explain the route choice using scope, risk, files, dependencies, tests, uncertainty, or user constraints. Do not write generic reasons like "seems medium".
+If a ChangeSet is present, you are grouping its operations into deliverable tasks, not inventing the decomposition: every operation id must appear in exactly one task's `covers`; `dependencies` lists ids of tasks that must complete first (respect each operation's depends_on); `target_nodes` lists the design node ids each task touches. A deterministic validator rejects plans with missing, duplicated or unknown coverage, unknown dependencies or cycles. If no ChangeSet is present, covers/dependencies/target_nodes may be empty lists.
+

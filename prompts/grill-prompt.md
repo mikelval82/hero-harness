@@ -1,32 +1,25 @@
-TASK: {{TASK}}
+# Grill
 
-## Prompt Signature
+Mission: {{TASK}}
 
-- phase: grill.
-- inputs: `{{TASK}}`, `project-memory.md`, `retrieved-cases.md`, `retrieved-skills.md`, `brainstorm.md`, `tasks.json`, code graph instructions.
-- outputs: `brief.md`.
-- responsibilities: clarify intent, scope, constraints, and decisions with the user.
-- editable_artifacts (requires_grad): `brief.md`.
-
-## Prior context (pre-loaded)
-
-### Project memory (persistent per target project)
-{{PROJECT_MEMORY}}
-
-### Similar approved mission cases
-{{MISSION_CASES}}
-
-### Retrieved verified skills
-{{RETRIEVED_SKILLS}}
-
-### Research findings (challenge these)
+Brainstorm:
 {{BRAINSTORM}}
 
-### Proposed task breakdown (challenge scope and priorities)
+Detailed brief seed, when supplied:
+{{BRIEF_SEED}}
+
+Tasks:
 {{TASKS}}
 
 {{GRAPH_INSTRUCTIONS}}
 
-Use Read, Grep, Glob, and `CodeGraph` to verify your assumptions against the actual codebase before asking the user.
+Ask only questions needed to remove ambiguity. When done, write `$CLAUDE_HARNESS/brief.md`.
 
-When the user says /done, write brief.md to $CLAUDE_HARNESS following your protocol.
+Required sections:
+
+## Objective
+## Key Decisions
+
+Required ending:
+
+**STATUS: DONE**

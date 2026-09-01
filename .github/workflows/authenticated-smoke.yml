@@ -1,0 +1,25 @@
+name: Authenticated smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      acknowledgement:
+        description: Confirm that the configured environment and secrets are approved for this smoke.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ inputs.acknowledgement }}
+    runs-on: ubuntu-latest
+    environment: authenticated-smoke
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deliberately not configured in public CI
+        run: |
+          echo "NOT_RUN: authenticated smoke requires an approved private environment and provider access."
+          exit 1
