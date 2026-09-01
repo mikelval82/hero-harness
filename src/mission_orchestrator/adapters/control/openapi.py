@@ -85,6 +85,23 @@ def openapi_document() -> dict[str, object]:
                     command_response,
                 )
             },
+            "/ask": {
+                "post": _write_operation(
+                    "Submit a bounded read-only code question",
+                    "submitReadOnlyAsk",
+                    "Code graph",
+                    command_response,
+                    accepted=True,
+                )
+            },
+            "/ask/{operation_id}": {
+                "get": _read_operation(
+                    "Read a read-only code question result",
+                    "readAskOperation",
+                    "Code graph",
+                    parameters=[_path_parameter("operation_id")],
+                )
+            },
             "/documents/{logical_id}": {
                 "get": _read_operation(
                     "Read document version",
