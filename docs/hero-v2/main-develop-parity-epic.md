@@ -143,15 +143,19 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### R6 — Contrato de proyecto público
 
-- [ ] LICENSE conservada explícitamente.
-- [ ] Nombre de distribución, módulo, autor, URLs y classifiers coherentes.
-- [ ] CONTRIBUTING y templates describen v2.
-- [ ] `.env.example` documenta providers sin secretos.
-- [ ] README distingue verificación local, CI y E2E real.
+- [x] LICENSE conservada explícitamente.
+- [x] Nombre de distribución, módulo, autor, URLs y classifiers coherentes.
+- [x] CONTRIBUTING y templates describen v2.
+- [x] `.env.example` documenta providers sin secretos.
+- [x] README distingue verificación local, CI y E2E real.
 
 **Prioridad:** P0/P1.
 
 **Depende de:** R5 para publicar con señal reproducible.
+
+**Evidencia:** [contrato R6 público](specs/R6-public-project-contract.md), wheel construido con `uv`, `pip check`, los tres entry points y 220 tests locales correctos. La CI previa de la misma PR completó correctamente Ubuntu y Windows; el SHA documental final debe volver a pasar los checks requeridos antes de fusionar.
+
+**Riesgo residual:** la configuración de ejemplo evita secretos y los tests/CI no simulan una conexión real al proveedor. El smoke autenticado permanece separado, aprobado manualmente y en estado `NOT_RUN` hasta que exista una red y credencial autorizadas.
 
 ## Track O — Paridad operativa
 
