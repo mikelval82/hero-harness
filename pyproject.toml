@@ -1,39 +1,47 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "hero-harness"
 version = "0.1.0"
-description = "HERO — Harness for Engineering and Run-time Orchestration: a runtime control system around foundation models for autonomous software-engineering missions."
+description = "HERO v2 mission orchestration runtime with contract-governed execution."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { file = "LICENSE" }
 authors = [{ name = "Mikel Val Calvo" }]
-keywords = ["llm", "agents", "harness", "anthropic", "claude", "agentic", "autonomous-software-engineering"]
+keywords = ["harness", "llm", "agents", "mission-orchestration", "hero"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = [
-    "anthropic>=0.84.0",
-    "tree-sitter>=0.23",
-    "tree-sitter-python>=0.23",
-]
-
-[project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dependencies = []
 
 [project.urls]
 Homepage = "https://github.com/mikelval82/hero-harness"
 Repository = "https://github.com/mikelval82/hero-harness"
 Issues = "https://github.com/mikelval82/hero-harness/issues"
 
-[tool.setuptools]
-packages = ["src", "benchmark"]
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+deepseek = ["openai>=1.50"]
+dev = []
 
-[tool.pytest.ini_options]
-testpaths = ["src/tests", "benchmark"]
+[project.scripts]
+mission = "mission_orchestrator.cli:main"
+mission-worker = "mission_orchestrator.worker:main"
+code-graph = "mission_orchestrator.adapters.analysis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mission_orchestrator = ["py.typed", "adapters/web/static/*.html"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

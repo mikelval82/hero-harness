@@ -1,27 +1,17 @@
-# Environment / secrets
-.env
-.env.local
-src/.env
-
-# Python
+.venv/
+.uv-cache/
 __pycache__/
 *.py[cod]
-*.egg-info/
-.eggs/
-build/
-dist/
-.venv/
-venv/
-.uv-cache/
 .pytest_cache/
-
-# Harness runtime / ephemeral data
-.harness/
-telemetry/
-*.log
-
-# OS / editor
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.egg-info/
+.env
+.env.*
+!.env.example
+*.env.local
+.playwright-mcp/
+debug.log
+flow-single-application.png

@@ -1,0 +1,139 @@
+from __future__ import annotations
+
+import argparse
+import atexit
+import os
+import signal
+from pathlib import Path
+
+from mission_orchestrator.adapters.command_bus import QueueCommandBus
+from mission_orchestrator.adapters.filesystem.workspace import sanitize
+from mission_orchestrator.adapters.stdin.listener import StdinListener
+from mission_orchestrator.adapters.telegram.listener import TelegramListener
+from mission_orchestrator.adapters.web.server import MissionWebServer
+from mission_orchestrator.application.orchestrator import MissionOrchestrator
+from mission_orchestrator.bootstrap import RuntimeConfig, build_runtime
+from mission_orchestrator.domain.command import Command, CommandKind
+from mission_orchestrator.domain.mission import GateMode, MissionMode
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    load_runtime_env(Path.cwd())
+    mode = MissionMode.PLAN if args.plan_only else MissionMode.parse(args.mode)
+    task = resolve_task(args)
+    branch = args.branch_opt or args.branch or sanitize(task.lower().replace(" ", "-"), max_len=60)
+    gate_mode = GateMode.from_bool(args.gate)
+    project_dir = Path.cwd().resolve()
+    runtime = build_runtime(RuntimeConfig(
+        task=task,
+        branch=branch,
+        mode=mode,
+        project_dir=project_dir,
+        gate_mode=gate_mode,
+        no_grill=args.no_grill,
+        max_tasks=args.max_tasks,
+        resume=args.resume,
+        allow_dirty=args.allow_dirty,
+        provider=args.provider,
+        model=args.model,
+    ))
+    services = runtime.services
+    workspace = runtime.workspace
+    _install_signal_handlers(runtime.commands)
+    atexit.register(lambda: services.logger.log("process exit"))
+    telegram = _telegram_config()
+    if telegram is not None:
+        token, chat_id = telegram
+        listener = TelegramListener(
+            token=token,
+            chat_id=chat_id,
+            mission_tag=workspace.mission_tag,
+            artifacts=services.artifacts,
+            state=services.state,
+            commands=runtime.commands,
+            registry=runtime.registry,
+        ).start()
+        atexit.register(listener.stop)
+    StdinListener(runtime.commands).start_if_tty()
+    if args.web:
+        web = MissionWebServer(
+            workspace.harness_dir,
+            workspace.mission_tag,
+            port=args.web_port,
+            commands=runtime.commands,
+        )
+        services.logger.log(f"web server: {web.start()}")
+    result = MissionOrchestrator(runtime.services, runtime.context).run()
+    return 0 if result.block is None else 2
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="mission")
+    parser.add_argument("task", nargs="?")
+    parser.add_argument("branch", nargs="?")
+    parser.add_argument("--no-grill", action="store_true")
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument("--gate", action="store_true")
+    parser.add_argument("--plan-only", action="store_true")
+    parser.add_argument("--mode", choices=[*([mode.value for mode in MissionMode]), "spec-plan"], default="full")
+    parser.add_argument("--task-file")
+    parser.add_argument("--branch", dest="branch_opt")
+    parser.add_argument("--max-tasks", type=int, default=20)
+    parser.add_argument("--provider", choices=("anthropic", "deepseek"))
+    parser.add_argument("--model")
+    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--web-port", type=int, default=8765)
+    return parser.parse_args(argv)
+
+
+def _telegram_config() -> tuple[str, str] | None:
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+    if bool(token) != bool(chat_id):
+        raise ValueError("TELEGRAM_TOKEN and TELEGRAM_CHAT_ID must be configured together")
+    return (token, chat_id) if token else None
+
+
+def resolve_task(args: argparse.Namespace) -> str:
+    if args.task_file:
+        return Path(args.task_file).read_text(encoding="utf-8").strip()
+    if args.task:
+        return args.task
+    return input("Mission task: ").strip()
+
+
+def load_dotenv(path: Path) -> None:
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def load_runtime_env(project_dir: Path) -> None:
+    project_dir = project_dir.resolve()
+    load_dotenv(project_dir / ".env")
+    load_dotenv(project_dir / ".env.local")
+    repository_root = Path(__file__).resolve().parents[2]
+    if repository_root != project_dir:
+        load_dotenv(repository_root / ".env.local")
+
+
+def _install_signal_handlers(commands: QueueCommandBus) -> None:
+    def handler(signum, frame) -> None:  # noqa: ANN001
+        commands.publish(Command(CommandKind.ABORT, reason=f"signal {signum}"))
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(signum, handler)
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

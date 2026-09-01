@@ -1,30 +1,21 @@
 ---
 name: Bug report
-about: Report a problem to help us improve
-title: "[Bug] "
+about: Report an observable v2 defect without credentials or private project data
+title: "bug: "
 labels: bug
 ---
 
-## Description
-
-A clear and concise description of the bug.
-
-## Steps to reproduce
-
-1.
-2.
-3.
+## Observed behaviour
 
 ## Expected behaviour
 
-What you expected to happen.
+## Reproduction
 
-## Actual behaviour
+Include the OS, Python version, command or API route, and a minimal sanitized
+fixture. Do not include API keys, Telegram tokens, worker handshakes or project
+source that you are not allowed to share.
 
-What actually happened (include logs / tracebacks if relevant).
+## Validation evidence
 
-## Environment
-
-- OS:
-- Python version:
-- HERO version / commit:
+- [ ] Local contract test or CI check attached
+- [ ] Provider/browser/process evidence is distinguished from mocks

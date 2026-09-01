@@ -1,55 +1,44 @@
-# Contributing to HERO
+# Contribuir a HERO Harness v2
 
-Thanks for your interest in improving HERO! This document explains how to set
-up your environment, the conventions we follow, and how to submit changes.
+Gracias por mejorar HERO Harness. `develop` es la línea v2 y no se mezcla de
+forma directa con la historia v1 de `main`; cada cambio se propone mediante una
+PR pequeña, revisable y con evidencia proporcional al riesgo.
 
-## Getting started
+## Preparar el entorno
 
-1. Fork and clone the repository.
-2. Create a virtual environment and install dependencies:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   pip install pytest
-   ```
-3. Copy `.env.example` to `.env` and add your `ANTHROPIC_API_KEY`.
+Usa Python 3.12 o posterior. Para las pruebas de contrato no se necesita una
+clave de proveedor:
 
-## Running the tests
-
-```bash
-python -m pytest src/tests -q
-python -m pytest benchmark -q
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[anthropic,deepseek]"
+.\.venv\Scripts\python.exe -m unittest discover -s tests
 ```
 
-All tests must pass before opening a pull request.
+Consulta [`.env.example`](.env.example) antes de configurar un provider. Las
+claves reales viven sólo en el entorno local o en secretos aprobados; no se
+incluyen en issues, PRs, fixtures ni logs.
 
-## Coding conventions
+## Proponer un cambio
 
-This project keeps a **static code graph** (tree-sitter) over `src/`. To keep the graph
-accurate, production code follows the rules in [`src/CLAUDE.md`](src/CLAUDE.md):
+1. Crea una rama desde `develop` y limita el cambio a un objetivo verificable.
+2. Actualiza tests y documentación cuando cambie un contrato observable.
+3. Ejecuta la suite completa y explica cualquier evidencia que no pueda
+   reproducirse localmente.
+4. Abre una PR usando la plantilla. Si afecta al roadmap de paridad, declara el
+   `PARITY-ID`, la evidencia v1, el contrato v2, una evidencia negativa y el
+   riesgo residual.
 
-- Classes and functions must be **top-level** (no nested definitions).
-- Imports must be **absolute** (e.g. `from src.core.gate import check_gate`).
-- Calls must be **direct** (avoid dynamic dispatch / call-through-variable).
-- Inheritance must be **explicit**.
+Los checks de Ubuntu y Windows son obligatorios. Un mock o un check local no
+prueba un proveedor real; los smokes autenticados requieren aprobación explícita
+y deben declarar su alcance y resultado.
 
-Other conventions:
+## Diseño y seguridad
 
-- Specifications use **EARS** syntax; architectural decisions use **ADR** format.
-- Prompt templates live in `prompts/` with the `-prompt.md` suffix.
+Conserva la separación entre dominio, aplicación, puertos y adapters. No
+introduzcas una segunda autoridad de estado ni ejecución de shell controlada por
+un modelo. Cualquier cambio que afecte a credenciales, procesos, Git, Telegram o
+contratos de Graph Lab debe incluir una prueba de rechazo o bloqueo de la ruta
+insegura.
 
-## Submitting changes
-
-1. Create a feature branch: `git checkout -b feat/my-change`.
-2. Make your change with focused commits and clear messages.
-3. Add or update tests.
-4. Run the full test suite.
-5. Open a pull request describing **what** changed and **why**.
-
-## Reporting issues
-
-Please use the issue templates and include reproduction steps, expected vs. actual
-behaviour, and your environment (OS, Python version).
-
-By contributing you agree that your contributions will be licensed under the MIT License.
+Al contribuir aceptas que tus aportaciones se publiquen bajo la [licencia MIT](LICENSE).

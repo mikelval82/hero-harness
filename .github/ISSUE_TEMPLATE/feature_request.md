@@ -1,22 +1,18 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
-title: "[Feature] "
+about: Propose a bounded v2 capability with an explicit contract
+title: "feat: "
 labels: enhancement
 ---
 
-## Problem
+## Problem and desired outcome
 
-What problem does this feature solve? Why is it needed?
+## Proposed v2 contract
 
-## Proposed solution
+Describe the observable invariant, authority boundary and acceptance criteria.
 
-Describe the solution you'd like.
+## Evidence and risk
 
-## Alternatives considered
-
-Any alternative approaches you considered.
-
-## Additional context
-
-Anything else that helps explain the request.
+State whether the proposal affects credentials, child processes, Git, Telegram,
+Graph Lab integration or a provider. Include the rejection path and residual
+risk when relevant.

@@ -1,0 +1,57 @@
+name: Migration governance
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  parity-contract:
+    name: parity-contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a parity ID or a justified N/A
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          if printf '%s\n' "${PR_BODY}" | grep -Eiq '^[[:space:]]*-[[:space:]]*(`PARITY-ID:`|PARITY-ID:)[[:space:]]*(R[1-6]|O[1-8]|L[1-4])([,[:space:]]|$)'; then
+            exit 0
+          fi
+          if printf '%s\n' "${PR_BODY}" | grep -Eiq '^[[:space:]]*-[[:space:]]*(`PARITY-ID:`|PARITY-ID:)[[:space:]]*N/A([[:space:]]|$)' && \
+             printf '%s\n' "${PR_BODY}" | grep -Eiq '^[[:space:]]*-[[:space:]]*(`NON-PARITY-REASON:`|NON-PARITY-REASON:)[[:space:]]*[^<[:space:]].+'; then
+            exit 0
+          fi
+          echo "::error::Declare PARITY-ID R1-R6, O1-O8 or L1-L4. For N/A, provide NON-PARITY-REASON."
+          exit 1
+
+  related-history:
+    name: related-history
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the proposed head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Require a common Git ancestor
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}"
+          git cat-file -e "${HEAD_SHA}^{commit}"
+          merge_base="$(git merge-base "${BASE_SHA}" "${HEAD_SHA}" || true)"
+          if [ -z "${merge_base}" ]; then
+            echo "::error::Base and head have unrelated histories. Port behavior through a v2 parity PR; do not use --allow-unrelated-histories."
+            exit 1
+          fi
+          echo "Common ancestor: ${merge_base}"

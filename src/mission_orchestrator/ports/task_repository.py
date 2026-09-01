@@ -1,0 +1,13 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from mission_orchestrator.domain.task import Task, TaskStatus
+
+
+class TaskRepository(Protocol):
+    def load(self) -> list[Task]: ...
+    def save(self, tasks: list[Task]) -> None: ...
+    def update(self, index: int, status: TaskStatus, reason: str = "") -> None: ...
+    def summary(self) -> str: ...
+

@@ -1,231 +1,190 @@
-# HERO
+# HERO Harness v2
 
-**HERO** stands for **H**arness for **E**ngineering and **R**un-time **O**rchestration.
+`hero-harness` es la distribución pública; `mission_orchestrator` es su módulo
+Python estable. Es el núcleo de ejecución de HERO: convierte una intención
+revisada en una misión trazable, gobierna sus contratos y decide si la
+implementación puede completarse. Su interfaz visual complementaria es
+[HERO Graph Lab](https://github.com/mikelval82/hero-graph-lab), donde una persona
+puede explorar el código, diseñar cambios, aprobar gates y observar el estado de
+la misión.
 
-> A runtime **control system** around foundation models for autonomous software-engineering missions.
+Los dos repositorios permanecen desacoplados. HARNESS puede ejecutar misiones
+desde CLI, stdin o Telegram sin Graph Lab; Graph Lab puede explorar código y
+preparar un borrador de diseño sin HARNESS. Cuando trabajan juntos, Graph Lab
+arranca `mission-worker` como un proceso independiente y se comunica únicamente
+mediante HTTP/JSON autenticado en loopback. Graph Lab no importa el código de
+HARNESS y el token del worker nunca se entrega al navegador.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![CI](https://github.com/mikelval82/hero-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/mikelval82/hero-harness/actions/workflows/ci.yml)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+## Relación con HERO Graph Lab
 
-HERO is **not** a single agent. It is a control system that wraps a large
-language model and turns it into a reliable software engineer: it prepares context,
-routes models per phase, executes work through tools, validates artifacts, recovers
-from failures, records traces, and keeps reusable learning across missions.
-
-The design is grounded in recent research on **harness engineering** — the idea that
-autonomous software capability is an emergent property of the
-`model × harness × environment` system, not of the model alone. See
-[`docs/research/`](docs/research/) for the literature review behind this project.
-
----
-
-## Table of contents
-
-- [Why a harness?](#why-a-harness)
-- [Key features](#key-features)
-- [Architecture](#architecture)
-- [Mission modes](#mission-modes)
-- [Quickstart](#quickstart)
-- [The Tron Arena benchmark](#the-tron-arena-benchmark)
-- [Repository layout](#repository-layout)
-- [Methodology & research](#methodology--research)
-- [Contributing](#contributing)
-- [License](#license)
-
----
-
-## Why a harness?
-
-A raw LLM call is stateless and unaccountable. A *harness* adds the scaffolding that
-makes autonomous engineering possible and auditable:
-
-$$
-C_{\text{system}} = F(C_{\text{model}},\; C_{\text{harness}},\; C_{\text{environment}},\; T)
-$$
-
-This project implements that scaffolding as a **multi-phase mission pipeline** driven by
-specialised sub-agents (`researcher → specifier → planner → implementer → reviewer`),
-with telemetry, memory, a static code graph, and gated artifacts at every step.
-
-## Key features
-
-- **Phase-based mission pipeline** — research, spec, plan, implement and review run as
-  discrete, auditable phases with their own prompts and quality gates.
-- **Model routing per phase** — cheaper models for exploration, stronger models for
-  implementation (`src/core/model_policy.py`).
-- **Agentic runtime** — a tool-using loop (`Read / Write / Edit / Bash / search`) over the
-  Anthropic Messages API (`src/agent/loop.py`).
-- **Code knowledge graph** — tree-sitter static analysis to give agents structure-aware
-  context (`src/analysis/`).
-- **Persistent learning** — case base, project memory and a skill library that survive
-  across missions (`src/harness/`).
-- **Ephemeral workspace** — all mission artifacts are written to an isolated harness
-  workspace; the target project only receives the requested code changes.
-- **Tron Arena benchmark** — a deterministic game engine to benchmark agent strategies
-  ([`benchmark/tron_arena/`](benchmark/tron_arena/)).
-
-## Architecture
+Graph Lab es el editor y visualizador; HARNESS es la autoridad contractual. Un
+cambio dibujado en Graph Lab sigue siendo un borrador local hasta que el usuario
+elige **Save map**. A partir de ahí, HARNESS conserva las revisiones aprobadas,
+compila el ChangeSet y el WorkPlan, publica contratos de tarea inmutables,
+concede el único lease de ejecución y verifica el resultado contra el código.
 
 ```mermaid
 flowchart LR
-    USER([User]) --> CLI[src/cli.py]
-    CLI --> CTX[MissionContext]
-    CTX --> ORCH[MissionRunner]
-    ORCH --> PHASES[Agentic phases]
-    ORCH --> TASKS[Task loop]
-    ORCH --> FINAL[Report & close]
-
-    PHASES --> LLM[Anthropic Messages API]
-    PHASES --> TOOLS[Read / Write / Edit / Bash / search]
-    TASKS --> TARGET[Target project]
-
-    ORCH --> HARNESS[Ephemeral workspace]
-    HARNESS --> ARTIFACTS[Mission artifacts]
-    HARNESS --> TELEMETRY[Telemetry]
-    HARNESS --> MEMORY[Memory / cases / skills]
+    User[Usuario] --> GraphLab[HERO Graph Lab]
+    Codex[Codex mediante MCP] --> GraphLab
+    GraphLab --> Draft[Exploración y diseño local]
+    Draft -->|Save map| Worker[HARNESS worker]
+    Worker --> Contract[Brief, diseño y contratos aprobados]
+    Contract --> Mission[Mission]
+    Contract --> Chat[Chat Implement]
+    Contract --> MCP[Codex MCP]
+    Mission --> Verify[Verificación y reconciliación]
+    Chat --> Verify
+    MCP --> Verify
+    Verify --> Project[Código y Git]
+    Project --> GraphLab
 ```
 
-A full set of architecture and flow diagrams lives in
-[`harness-diagram.md`](harness-diagram.md).
+Mission, el chat de Graph Lab y Codex mediante MCP consumen el mismo contrato de
+tarea, pero no pueden modificar simultáneamente una misión. HARNESS registra el
+actor `mission`, `chat` o `mcp` en un único lease. Una vez cerrado, el verificador
+común determina si los nodos y relaciones contractuales están materializados o
+siguen siendo divergentes; Graph Lab solo representa visualmente ese estado
+derivado.
 
-## Mission modes
+## Estado
 
-Every mission is organised as `setup → init → task loop → finalize`. The `--mode` flag
-decides which phases run in each block:
+Este repositorio contiene una base funcional con:
 
-| Mode | Init pipeline | Task pipeline | Finalize | Use |
-|---|---|---|---|---|
-| `full` | `research → structure` | by complexity S/M/L | report + merge | Default end-to-end route |
-| `focused` | `research → structure` | by complexity S/M/L | report + merge | Less upfront conversation |
-| `hotfix` | none | by complexity S/M/L | report + merge | Reuse existing `tasks.json` |
-| `explore` | `research` | none | report | Research only |
-| `spec` | `research → structure` | `spec` | report | Partial harness, spec only |
-| `spec-plan` | `research → structure` | `spec → plan` | report | Partial harness, spec + plan |
+- Dominio y puertos puros.
+- `AppServices` como composition root sin framework DI.
+- Pipeline por modos `full`, `focused`, `plan`, `explore` y `hotfix`.
+- Adapters filesystem para artefactos, tareas, estado, workspace y registry.
+- Tools `Read`, `Write`, `Edit`, `Glob`, `Grep` y `Bash` con politica de rutas.
+- CommandBus unico con listeners stdin/Telegram.
+- Gate evaluator, HITL basico, compactacion, report y Git service.
+- Code graph SQLite incremental basado en `ast` de Python.
+- Control plane local versionado con snapshots, documentos, mapa de diseno y eventos.
+- Worker HTTP autenticado para clientes independientes como Graph Lab.
+- Snapshots aprobados, ChangeSets, WorkPlans y contratos de tarea inmutables.
+- Lease de ejecución compartido por Mission, Chat y MCP.
+- Verificador estructural Python, reconciliación y receipts de ejecución.
+- Tests sin depender de Anthropic o Telegram reales ni de repositorios Git externos.
 
-## Quickstart
+## Uso
 
-### Requirements
+Requiere Python 3.12 o posterior. Crea un entorno e instala sólo los providers
+que vayas a utilizar:
 
-- Python **3.12+**
-- An Anthropic API key
-
-### Install
-
-```bash
-git clone https://github.com/mikelval82/hero-harness.git
-cd hero-harness
+```powershell
 python -m venv .venv
-# Windows: .venv\Scripts\activate
-# Unix:    source .venv/bin/activate
-pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e ".[anthropic]"
+# o bien: .\.venv\Scripts\python.exe -m pip install -e ".[deepseek]"
 ```
 
-### Configure
-
-Copy the example environment file and add your credentials:
-
-```bash
-cp .env.example .env
+```powershell
+.\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo --mode plan
 ```
 
-```dotenv
-ANTHROPIC_API_KEY=sk-ant-...
-# Optional integrations
-# TELEGRAM_TOKEN=
-# TELEGRAM_CHAT_ID=
+Para usar el script `mission`, instala el paquete en editable:
+
+```powershell
+uv pip install -e .
 ```
 
-### Run a mission
+Los adapters Anthropic y DeepSeek son opcionales. Instala uno con
+`uv pip install -e ".[anthropic]"` o `uv pip install -e ".[deepseek]"`. Anthropic
+usa `ANTHROPIC_API_KEY`; DeepSeek usa `DEEPSEEK_API_KEY` y, de forma opcional,
+`DEEPSEEK_BASE_URL`. HARNESS carga `.env` y `.env.local` sin sobrescribir
+variables ya definidas.
 
-```bash
-# Explore a codebase (research only, no code changes)
-python src/cli.py "Audit the authentication module" --mode explore
+El proveedor puede seleccionarse con `--provider` o `HARNESS_PROVIDER`; el
+modelo, con `--model` o `HARNESS_MODEL`. DeepSeek usa `deepseek-v4-flash` por defecto:
 
-# Full autonomous mission on a feature
-python src/cli.py "Add pagination to the products endpoint" --mode full
+```powershell
+.\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo `
+    --provider deepseek --model deepseek-v4-flash
 ```
 
-Mission artifacts are written to an isolated workspace (`$CLAUDE_HARNESS`); your target
-project only receives the requested code changes.
+## Ejecutar HARNESS con Graph Lab
 
-### Optional Telegram control
+Prepara primero el entorno virtual de este repositorio. Después inicia Graph Lab
+desde su propio checkout, indicando el proyecto que ambos procesos compartirán,
+la raíz de HARNESS y su intérprete:
 
-Set both `TELEGRAM_TOKEN` and `TELEGRAM_CHAT_ID` to bind a private Telegram bot to
-the current mission. Every command acts only on that mission. A token can be owned by
-one running mission; if it is already in use, another mission continues without
-Telegram. Set neither variable to disable the integration—partial configuration is an
-error.
-
-The bot supports status and artifact reads, safe-point control (`/pause`, `/resume`,
-`/abort`, `/gate`), correlated grill/review decisions, and `/ask <question>` for a
-read-only code query. `/ask` uses only `Read`, `Glob`, `Grep`, and a read-only
-`CodeGraph`; it cannot write files or run Bash. See the complete command-state contract
-in [`docs/design/telegram_single_mission.md`](docs/design/telegram_single_mission.md).
-
-## The Tron Arena benchmark
-
-A deterministic two-player Tron engine for benchmarking bot strategies, used to measure
-the harness against baseline policies.
-
-```bash
-# Single match between two built-in bots
-python -m benchmark.tron_arena match --bot-a greedy_space --bot-b random_legal --seed 42
-
-# Round-robin tournament
-python -m benchmark.tron_arena tournament \
-  --bots random_legal,straight_until_blocked,greedy_space,always_left \
-  --seeds 1,2,3
+```powershell
+cd C:\path\to\hero-graph-lab
+.\.venv\Scripts\python.exe -m hero_graph_lab `
+	--mission-project C:\path\to\project `
+	--harness-root C:\path\to\hero-harness `
+	--harness-python C:\path\to\hero-harness\.venv\Scripts\python.exe
 ```
 
-See [`benchmark/tron_arena/README.md`](benchmark/tron_arena/README.md) for the full CLI.
+Graph Lab queda disponible por defecto en <http://127.0.0.1:8765>. Al pulsar
+**Start mission**, el host de Graph Lab crea el worker, lee su único handshake
+por stdout y conserva el token exclusivamente en el proceso servidor. Las
+peticiones del navegador se envían al proxy local de Graph Lab, no directamente
+al puerto autenticado del worker.
 
-## Repository layout
+## Worker y API local
 
-```
-hero-harness/
-├── src/                 # Harness engine (mission orchestration, agent loop, memory)
-│   ├── cli.py           # Entry point
-│   ├── agent/           # Tool-using agentic loop
-│   ├── core/            # Context, model routing, git, paths
-│   ├── mission/         # Mission runner, phase runner, reporting
-│   ├── harness/         # Telemetry, case base, project memory, skills
-│   ├── analysis/        # tree-sitter code graph
-│   └── tests/           # Unit tests
-├── agents/              # Sub-agent definitions (researcher, planner, ...)
-├── commands/            # Interactive skills (/grill, /diagnose, /zoom-out, ...)
-├── prompts/             # Phase prompt templates
-├── benchmark/           # Tron Arena benchmark
-├── docs/research/       # Literature review (harness-engineering papers)
-├── docs/design/         # Internal design specs of harness features
-├── AGENTS.md            # Methodology map
-├── CHECKPOINTS.md       # Universal quality criteria
-├── GLOSSARY.md          # Shared methodology vocabulary
-└── harness-diagram.md   # Architecture & flow diagrams
+`mission-worker` es el limite de integracion para interfaces externas. Escucha
+solo en loopback, imprime un unico handshake JSON al arrancar y exige el token
+de ese handshake en el resto de peticiones. El Host que crea el proceso debe
+mantener el token fuera del navegador.
+
+```powershell
+.\.venv\Scripts\python.exe -m mission_orchestrator.worker `
+	--project C:\ruta\proyecto `
+	--task "Implementar la mision" `
+	--branch feature/mision `
+	--mode full
 ```
 
-## Methodology & research
+El contrato se publica en `/api/v1/openapi.json`; las capacidades negociables,
+en `/api/v1/capabilities`. Snapshots, documentos y operaciones de diseno usan
+revisiones para detectar escrituras obsoletas.
 
-- [`AGENTS.md`](AGENTS.md) — the methodology map and agent registry.
-- [`GLOSSARY.md`](GLOSSARY.md) — shared vocabulary of the methodology.
-- [`CHECKPOINTS.md`](CHECKPOINTS.md) — universal quality criteria.
-- [`docs/research/`](docs/research/) — summaries of the academic work this harness builds on
-  (AI Harness Engineering, Reflexion, Voyager, DSPy, TextGrad, and more).
-- [`docs/design/`](docs/design/) — internal design specs of harness features
-  (skill library, mission case base, refiner, deterministic check registry, and more).
+El worker es la API que consume Graph Lab para mostrar snapshots, documentos,
+eventos, diseño, gates y contratos sin compartir memoria ni imports. Graph Lab
+negocia las operaciones disponibles mediante `/api/v1/capabilities`; no asume
+que todas las versiones de HARNESS ofrecen los mismos comandos.
 
-## Contributing
+## Ejecución dirigida por contratos
 
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow,
-coding conventions and how to run the test suite.
+Una idea o un brief maduro entra como semilla, no como aprobación automática.
+Research y Grill lo convierten en el `brief.md` revisado. La aprobación conjunta
+de ese brief y una revisión de diseño produce un snapshot inmutable que fija el
+proyecto, el commit base, el grafo observado y las obligaciones deseadas. De ese
+snapshot se derivan el ChangeSet, el WorkPlan y una porción contractual exacta
+para cada tarea.
 
-## License
+Cada tarea pasa por SPEC y PLAN antes de IMPLEMENT, y todas las fases reciben la
+misma porción contractual. Mission usa directamente el servicio de contratos.
+Graph Lab Chat solo puede escribir después de activar explícitamente
+**Implement** y utiliza lecturas y parches limitados a rutas contractuales, con
+SHA-256 y compare-and-swap. Codex obtiene el contrato y gobierna su lifecycle a
+través del MCP de Graph Lab, pero conserva sus herramientas nativas contenidas
+para editar y ejecutar pruebas; MCP no introduce otro shell ni otro almacén.
 
-Distributed under the MIT License. See [LICENSE](LICENSE) for details.
+Un ejecutor debe terminar completando, informando un bloqueo o solicitando una
+enmienda. HARNESS vuelve a ejecutar la validación configurada y el verificador
+estructural antes de aceptar la finalización. Un cambio de diseño durante la
+ejecución se detiene en el siguiente límite seguro y exige una nueva aprobación.
+Al terminar la misión, HARNESS versiona `mission-report.md`; solo hace commit o
+merge si la verificación y la reconciliación final abren el gate correspondiente.
 
----
+## Tests
 
-<p align="center">
-  If this project is useful to you, consider giving it a ⭐ — it helps others find it.
-</p>
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+## Validación y límites de evidencia
+
+La validación local anterior comprueba contratos y adapters con dobles locales;
+no autentica ni contacta proveedores. La workflow [CI](.github/workflows/ci.yml)
+instala el paquete en limpio y ejecuta `pip check`, imports, entry points y la
+suite completa en Python 3.12 sobre Ubuntu y Windows. Los checks son requeridos
+para `develop` y `main`.
+
+El workflow [authenticated-smoke](.github/workflows/authenticated-smoke.yml) es
+deliberadamente independiente: sólo puede iniciarlo una persona con aprobación
+explícita en el entorno de GitHub correspondiente. Mientras no se ejecute con un
+proveedor real, su resultado es `NOT_RUN`; ni los tests locales ni CI constituyen
+una prueba E2E de DNS/TLS corporativo, autenticación, cuotas o respuestas reales.
