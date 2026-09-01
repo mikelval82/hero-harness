@@ -11,6 +11,7 @@ class BlockKind(Enum):
     MAX_TURNS = "max_turns"
     API_RETRIES = "api_retries"
     USAGE_LIMIT = "usage_limit"
+    TOKEN_BUDGET = "token_budget"
     GATE_FAIL = "gate_fail"
     POLICY = "policy"
     USER_REJECTED = "user_rejected"

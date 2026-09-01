@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from time import monotonic
 from typing import Mapping
 
@@ -12,6 +13,7 @@ from mission_orchestrator.application.errors import (
 )
 from mission_orchestrator.application.phase_registry import GRAPH, get_phase_config
 from mission_orchestrator.application.services import AppServices
+from mission_orchestrator.application.cost_catalog import CostLedger, cost_record
 from mission_orchestrator.domain.block import BlockKind, BlockReason
 from mission_orchestrator.domain.mission import MissionContext, MissionSnapshot
 from mission_orchestrator.domain.phase import PhaseName, PhaseResult
@@ -37,6 +39,7 @@ class PhaseExecutor:
     def __init__(self, services: AppServices, context: MissionContext) -> None:
         self.services = services
         self.context = context
+        self.cost_ledger = CostLedger()
 
     def run(
         self,
@@ -47,6 +50,9 @@ class PhaseExecutor:
         complexity: str | None = None,
         retry_count: int = 0,
     ) -> PhaseExecution:
+        budget = _token_budget(os.environ.get("TOKEN_BUDGET"))
+        if self.cost_ledger.budget_exceeded(budget):
+            return PhaseExecution(None, self._blocked(phase, BlockKind.TOKEN_BUDGET, "token budget exceeded at phase safe point"))
         config = get_phase_config(phase)
         self.services.logger.log(f"phase start: {phase.value}")
         self.services.events.publish(
@@ -117,6 +123,15 @@ class PhaseExecutor:
                 "output_tokens": result.output_tokens,
             }
         )
+        record = cost_record(
+            getattr(result, "served_provider", None),
+            getattr(result, "served_model", None),
+            result.input_tokens,
+            result.output_tokens,
+            {},
+        )
+        self.cost_ledger.add(record)
+        self.services.logger.metric({"event": "model_cost", **record.__dict__, "total_tokens": self.cost_ledger.total_tokens})
         if evaluate_gate and config.gate_artifact:
             gate = self.services.gates.evaluate(phase.value, config.gate_artifact)
             if not gate.passed:
@@ -173,7 +188,6 @@ class PhaseExecutor:
             "MISSION_TAG": self.context.mission_tag,
             "PROJECT_NAME": self.context.project_name,
         }
-
     def _resolve_includes(self, includes: Mapping[str, str]) -> dict[str, str]:
         resolved: dict[str, str] = {}
         for key, artifact_name in includes.items():
@@ -189,3 +203,10 @@ class PhaseExecutor:
     @property
     def tool_environment(self) -> ToolEnvironment:
         return ToolEnvironment(self.context.project_dir, self.context.harness_dir)
+
+
+def _token_budget(value: str | None) -> int | None:
+    try:
+        return max(0, int(value)) if value else None
+    except ValueError:
+        return None

@@ -104,6 +104,8 @@ class PhaseResult:
     elapsed_seconds: float
     input_tokens: int
     output_tokens: int
+    served_provider: str | None = None
+    served_model: str | None = None
 
 
 @dataclass(frozen=True)
