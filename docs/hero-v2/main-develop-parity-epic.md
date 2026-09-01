@@ -222,6 +222,8 @@ R4, O4/O5 y O6/O7 pueden progresar en paralelo cuando R1 haya fijado la autorida
 
 ### O6 — Modos parciales
 
+**Contrato:** [O6 modos parciales](specs/O6-partial-modes.md). `spec-plan` ya se resuelve al modo canónico `plan`; `spec`-only y la matriz de no mutación siguen en implementación.
+
 - [ ] `spec-plan` es alias de `plan`, no pipeline duplicado.
 - [ ] Decisión e implementación de `spec` only.
 - [ ] Rutas parciales no cambian Git/proyecto.

@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from mission_orchestrator.application.pipeline_definitions import mission_pipeline_for, task_pipeline_for
+from mission_orchestrator.application.pipeline_definitions import mission_pipeline_for, mode_should_merge, task_pipeline_for
 from mission_orchestrator.domain.block import BlockKind, BlockReason
 from mission_orchestrator.domain.command import CommandKind, parse_control_command
 from mission_orchestrator.domain.mission import GateMode, MissionMode
@@ -32,6 +32,17 @@ class DomainContractsTest(unittest.TestCase):
         self.assertEqual(
             task_pipeline_for(Task("T-3", "small", TaskComplexity.S), MissionMode.FULL).phases,
             (PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT),
+        )
+
+    def test_spec_only_is_non_mutating_and_alias_has_plan_pipeline(self) -> None:
+        spec = mission_pipeline_for(MissionMode.SPEC, no_grill=False)
+        self.assertEqual(spec.init, ())
+        self.assertEqual(spec.finalize, (PhaseName.SPEC, PhaseName.REPORT_PLAN))
+        self.assertFalse(spec.task_loop)
+        self.assertFalse(mode_should_merge(MissionMode.SPEC))
+        self.assertEqual(
+            mission_pipeline_for(MissionMode.PLAN, no_grill=False).init,
+            mission_pipeline_for(MissionMode.parse("spec-plan"), no_grill=False).init,
         )
 
     def test_block_reason_and_commands(self) -> None:
@@ -60,4 +71,3 @@ class DomainContractsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

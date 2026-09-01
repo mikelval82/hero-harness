@@ -9,8 +9,16 @@ class MissionMode(Enum):
     FULL = "full"
     FOCUSED = "focused"
     PLAN = "plan"
+    SPEC = "spec"
     EXPLORE = "explore"
     HOTFIX = "hotfix"
+
+    @classmethod
+    def parse(cls, value: str) -> "MissionMode":
+        normalized = str(value).strip().lower()
+        if normalized == "spec-plan":
+            normalized = cls.PLAN.value
+        return cls(normalized)
 
 
 class GateMode(Enum):
@@ -99,4 +107,3 @@ class WaitingApproval:
             verdict=str(data.get("verdict", "")),
             notified=bool(data.get("notified", False)),
         )
-

@@ -20,7 +20,7 @@ from mission_orchestrator.domain.mission import GateMode, MissionMode
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     load_runtime_env(Path.cwd())
-    mode = MissionMode.PLAN if args.plan_only else MissionMode(args.mode)
+    mode = MissionMode.PLAN if args.plan_only else MissionMode.parse(args.mode)
     task = resolve_task(args)
     branch = args.branch_opt or args.branch or sanitize(task.lower().replace(" ", "-"), max_len=60)
     gate_mode = GateMode.from_bool(args.gate)
@@ -77,7 +77,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--allow-dirty", action="store_true")
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--plan-only", action="store_true")
-    parser.add_argument("--mode", choices=[mode.value for mode in MissionMode], default="full")
+    parser.add_argument("--mode", choices=[*([mode.value for mode in MissionMode]), "spec-plan"], default="full")
     parser.add_argument("--task-file")
     parser.add_argument("--branch", dest="branch_opt")
     parser.add_argument("--max-tasks", type=int, default=20)
