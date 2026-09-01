@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import unittest
 from pathlib import Path
 
@@ -63,6 +64,38 @@ class GatesAndMarkdownTest(unittest.TestCase):
         text = "## Files\n- `src/app.py`\n- tests/test_app.py\n\n## Other\n- ignore.md\n"
         self.assertEqual([path.as_posix() for path in status_files(text)], ["src/app.py", "tests/test_app.py"])
         self.assertEqual(audit_verdict("## Verdict\nMINOR_CHANGES\n"), ReviewVerdict.MINOR_CHANGES)
+
+    def test_review_gate_requires_passing_terminal_validation_evidence(self) -> None:
+        contract = {
+            "validation_obligations": [
+                {
+                    "id": "VO:node:1",
+                    "requirement_ids": ["ACC:node:1"],
+                    "kind": "trusted_command",
+                    "target": "src/example.py",
+                    "expected": "imports",
+                    "check_id": "target_validation",
+                }
+            ]
+        }
+        audit = "# Audit\n\n## Verdict\nAPPROVED\n\nNotes\n**STATUS: DONE**\n"
+        store = MemoryArtifacts({"audit.md": audit, "task-contract.json": json.dumps(contract)})
+        missing = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertFalse(missing.passed)
+        self.assertIn("NOT_RUN", missing.detail)
+
+        store.files["validation-evidence/target_validation.json"] = json.dumps(
+            {"check_id": "target_validation", "status": "fail"}
+        )
+        failed = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertFalse(failed.passed)
+        self.assertIn("FAILED", failed.detail)
+
+        store.files["validation-evidence/target_validation.json"] = json.dumps(
+            {"check_id": "target_validation", "status": "pass"}
+        )
+        passed = MarkdownGateEvaluator(store).evaluate("review", "audit.md")
+        self.assertTrue(passed.passed, passed.detail)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -150,8 +151,20 @@ class FilesystemAndToolsTest(unittest.TestCase):
             self.assertEqual(args[0], ["cmd.exe", "/c", str(script)])
             self.assertFalse(kwargs["shell"])
             self.assertEqual(kwargs["env"], {"PATH": "safe-path"})
+            receipt = json.loads((Path(harness) / "validation-evidence" / "target_validation.json").read_text())
+            self.assertEqual(receipt["status"], "pass")
+            self.assertEqual(receipt["actor"], "RunValidation")
+            self.assertNotIn("ok", receipt)
             with self.assertRaises(ValueError):
                 tool.execute({"check_id": "provider_command"}, ToolEnvironment(project_dir, Path(harness)))
+
+    def test_validation_records_not_run_receipt_when_script_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as project, tempfile.TemporaryDirectory() as harness:
+            tool = RunValidationTool()
+            result = tool.execute({"check_id": "target_validation"}, ToolEnvironment(Path(project), Path(harness)))
+            receipt = json.loads((Path(harness) / "validation-evidence" / "target_validation.json").read_text())
+            self.assertEqual(result.splitlines()[0], "exit=not_configured")
+            self.assertEqual(receipt["status"], "not_run")
 
     def test_environment_filter_removes_credential_shaped_names(self) -> None:
         filtered = sanitized_child_environment(
