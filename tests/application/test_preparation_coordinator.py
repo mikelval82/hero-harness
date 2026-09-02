@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from mission_orchestrator.adapters.documents.sqlite_catalog import SqliteDocumentCatalog
@@ -21,6 +22,7 @@ class PreparationCoordinatorTest(unittest.TestCase):
             root = Path(raw)
             agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
             services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            context = replace(context, no_grill=False)
             agent.artifacts = services.artifacts
             catalog = SqliteDocumentCatalog(context.harness_dir / "documents.db")
             documents = MissionDocumentService(services.artifacts, catalog, services.events)
@@ -64,6 +66,7 @@ class PreparationCoordinatorTest(unittest.TestCase):
             root = Path(raw)
             agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
             services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            context = replace(context, no_grill=False)
             agent.artifacts = services.artifacts
             catalog = SqliteDocumentCatalog(context.harness_dir / "documents.db")
             documents = MissionDocumentService(services.artifacts, catalog, services.events)
@@ -105,6 +108,66 @@ class PreparationCoordinatorTest(unittest.TestCase):
             self.assertEqual(snapshot["base_commit"], "test-head")
             self.assertEqual(catalog.get("mission/brief-seed").author, "HUMAN")
             self.assertEqual(catalog.get("mission/brief").author, "AGENT")
+
+    def test_grill_can_be_skipped_and_research_becomes_working_brief(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
+            root = Path(raw)
+            agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
+            services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            context = replace(context, no_grill=False)
+            agent.artifacts = services.artifacts
+            catalog = SqliteDocumentCatalog(context.harness_dir / "documents.db")
+            documents = MissionDocumentService(services.artifacts, catalog, services.events)
+            coordinator = PreparationCoordinator(
+                services=services,
+                context=context,
+                sessions=FilesystemMissionSessionStore(services.artifacts),
+                documents=documents,
+                catalog=catalog,
+            )
+
+            idea = coordinator.save_idea(
+                content="# Build an order service\n",
+                expected_session_revision=0,
+                base_document_revision=0,
+                command_id="idea-skip-grill",
+            )
+            research = coordinator.run_research(expected_session_revision=idea.session.revision)
+            review = coordinator.skip_grill(expected_session_revision=research.session.revision)
+
+            self.assertEqual(review.session.stage, MissionStage.DESIGN_REVIEW)
+            self.assertEqual(agent.phases, ["research"])
+            brief = catalog.get("mission/brief")
+            self.assertIsNotNone(brief)
+            self.assertEqual(brief.author, "SYSTEM")
+            self.assertIn("Grill was skipped", brief.content)
+
+    def test_no_grill_context_skips_gate_after_research(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
+            root = Path(raw)
+            agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
+            services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            agent.artifacts = services.artifacts
+            catalog = SqliteDocumentCatalog(context.harness_dir / "documents.db")
+            documents = MissionDocumentService(services.artifacts, catalog, services.events)
+            coordinator = PreparationCoordinator(
+                services=services,
+                context=context,
+                sessions=FilesystemMissionSessionStore(services.artifacts),
+                documents=documents,
+                catalog=catalog,
+            )
+
+            idea = coordinator.save_idea(
+                content="# Build an order service\n",
+                expected_session_revision=0,
+                base_document_revision=0,
+                command_id="idea-auto-skip-grill",
+            )
+            review = coordinator.run_research(expected_session_revision=idea.session.revision)
+
+            self.assertEqual(review.session.stage, MissionStage.DESIGN_REVIEW)
+            self.assertEqual(agent.phases, ["research"])
 
 
 if __name__ == "__main__":

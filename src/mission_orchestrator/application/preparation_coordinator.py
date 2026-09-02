@@ -137,6 +137,8 @@ class PreparationCoordinator:
                 return self._block(running, str(execution.block))
             review = running.move_to(MissionStage.RESEARCH_REVIEW)
             self._save(running, review)
+            if self.context.no_grill:
+                return self._skip_grill(review)
             return PreparationResult(review)
 
     def run_grill(self, *, expected_session_revision: int) -> PreparationResult:
@@ -159,6 +161,49 @@ class PreparationCoordinator:
             review = running.move_to(MissionStage.DESIGN_REVIEW)
             self._save(running, review)
             return PreparationResult(review)
+
+    def skip_grill(self, *, expected_session_revision: int) -> PreparationResult:
+        with self._action_lock:
+            current = self._expected(
+                expected_session_revision,
+                MissionStage.RESEARCH_REVIEW,
+                "skip_grill",
+            )
+            return self._skip_grill(current)
+
+    def _skip_grill(self, current: MissionSession) -> PreparationResult:
+        """Continue to design review using Research as the working brief."""
+        brainstorm = self.services.artifacts.read_text("brainstorm.md", default="").strip()
+        if not brainstorm:
+            return PreparationResult(
+                current,
+                False,
+                "research output is required before skipping Grill",
+            )
+        content = (
+            "# Brief\n\n"
+            "## Objective\n"
+            "Grill was skipped; the Research output below is the working brief.\n\n"
+            "## Key Decisions\n"
+            "- No additional Grill decisions were requested.\n\n"
+            "## Research output\n\n"
+            f"{brainstorm}\n"
+        )
+        existing = self.catalog.get("mission/brief")
+        brief = self.documents.save(
+            logical_id="mission/brief",
+            alias="brief.md",
+            content=content,
+            author="SYSTEM",
+            base_revision=existing.revision if existing is not None else 0,
+            command_id=f"skip-grill:{current.mission_id}:{current.revision}",
+            phase="skip-grill",
+        )
+        if brief.status is not DocumentSaveStatus.APPLIED:
+            return PreparationResult(current, False, brief.detail)
+        review = current.move_to(MissionStage.DESIGN_REVIEW)
+        self._save(current, review)
+        return PreparationResult(review, detail="Grill skipped; Research promoted to working brief")
 
     def approve_design_and_structure(
         self,

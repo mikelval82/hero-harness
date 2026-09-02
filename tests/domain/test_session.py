@@ -16,7 +16,11 @@ class MissionSessionTest(unittest.TestCase):
         self.assertEqual(review.stage, MissionStage.RESEARCH_REVIEW)
         self.assertEqual(
             review.allowed_actions,
-            (SessionAction.RUN_RESEARCH, SessionAction.START_GRILL),
+            (
+                SessionAction.RUN_RESEARCH,
+                SessionAction.START_GRILL,
+                SessionAction.SKIP_GRILL,
+            ),
         )
 
     def test_invalid_transition_is_rejected(self) -> None:

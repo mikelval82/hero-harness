@@ -27,6 +27,7 @@ class SessionAction(Enum):
     SAVE_IDEA = "save_idea"
     RUN_RESEARCH = "run_research"
     START_GRILL = "start_grill"
+    SKIP_GRILL = "skip_grill"
     REPLY = "reply"
     FINISH_GRILL = "finish_grill"
     APPROVE_DESIGN = "approve_design"
@@ -82,7 +83,11 @@ _TRANSITIONS: dict[MissionStage, frozenset[MissionStage]] = {
 
 _ACTIONS: dict[MissionStage, tuple[SessionAction, ...]] = {
     MissionStage.DRAFT: (SessionAction.SAVE_IDEA, SessionAction.RUN_RESEARCH),
-    MissionStage.RESEARCH_REVIEW: (SessionAction.RUN_RESEARCH, SessionAction.START_GRILL),
+    MissionStage.RESEARCH_REVIEW: (
+        SessionAction.RUN_RESEARCH,
+        SessionAction.START_GRILL,
+        SessionAction.SKIP_GRILL,
+    ),
     MissionStage.GRILLING: (SessionAction.REPLY, SessionAction.FINISH_GRILL),
     MissionStage.DESIGN_REVIEW: (SessionAction.START_GRILL, SessionAction.APPROVE_DESIGN),
     MissionStage.WORKPLAN_REVIEW: (

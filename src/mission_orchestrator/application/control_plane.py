@@ -43,6 +43,7 @@ class MissionControlPlane:
             "actions": [
                 "research",
                 "grill",
+                "skip-grill",
                 "approve-design",
                 "approve-execution",
                 "request-amendment",
@@ -269,6 +270,8 @@ class MissionControlPlane:
             return self.preparation.run_research(expected_session_revision=revision)
         if action == "grill":
             return self.preparation.run_grill(expected_session_revision=revision)
+        if action == "skip-grill":
+            return self.preparation.skip_grill(expected_session_revision=revision)
         if action == "approve-design":
             return self.preparation.approve_design_and_structure(
                 expected_session_revision=revision,
