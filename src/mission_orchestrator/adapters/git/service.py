@@ -45,7 +45,10 @@ class SubprocessGitService:
         if dirty.paths and not allow_dirty:
             raise RuntimeError("Git worktree is not clean; rerun with explicit --allow-dirty to preserve it")
         self._baseline_paths = frozenset(item["path"] for item in dirty.paths)
-        self.ensure_develop()
+        # The caller selects the base revision before preflight.  In particular,
+        # Graph Lab creates a detached worktree at the selected project's HEAD;
+        # checking out the legacy develop branch here would silently discard
+        # that selection and fork the mission from stale code.
         self.setup_branch(branch)
         return dirty if dirty.paths else None
 

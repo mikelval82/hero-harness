@@ -50,6 +50,14 @@ class TaskContractCompiler:
                     f"{unknown_relationship_nodes[0]}"
                 )
             task_nodes = [nodes[node_id] for node_id in sorted(target_ids)]
+            obligation_node_ids = {
+                str(operation["target_node"])
+                for operation in covered
+                if operation.get("target_node")
+            }
+            obligation_nodes = [
+                nodes[node_id] for node_id in sorted(obligation_node_ids)
+            ]
             requirements = sorted(
                 {
                     str(requirement)
@@ -75,7 +83,7 @@ class TaskContractCompiler:
                 "operations": covered,
                 "nodes": task_nodes,
                 "relationships": relationships,
-                "validation_obligations": compile_validation_obligations(task_nodes),
+                "validation_obligations": compile_validation_obligations(obligation_nodes),
             }
             encoded = json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
             path = f"task-contracts/{snapshot_id}/{task.id}.json"

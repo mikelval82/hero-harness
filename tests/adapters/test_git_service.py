@@ -121,6 +121,34 @@ class GitSigningFallbackTest(unittest.TestCase):
             original,
         )
 
+    def test_preflight_branches_from_selected_head_not_stale_develop(self) -> None:
+        selected_head = self.service.current_commit()
+        self.service.ensure_develop()
+        (self.repo / "develop-only.txt").write_text("stale", encoding="utf-8")
+        _git(self.repo, "add", "develop-only.txt")
+        _git(self.repo, "-c", "commit.gpgsign=false", "commit", "-m", "develop only")
+        _git(self.repo, "checkout", "--detach", selected_head)
+
+        self.service.preflight(
+            branch="feature/from-selected-head",
+            resume=False,
+            allow_dirty=False,
+            mutating=True,
+        )
+
+        self.assertEqual(self.service.current_commit(), selected_head)
+        self.assertEqual(
+            subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.repo,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip(),
+            "feature/from-selected-head",
+        )
+        self.assertFalse((self.repo / "develop-only.txt").exists())
+
     def test_preflight_rejects_dirty_tree_unless_opted_in_and_protects_baseline(self) -> None:
         dirty = self.repo / "user-note.txt"
         dirty.write_text("keep me", encoding="utf-8")

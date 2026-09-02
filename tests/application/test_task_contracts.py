@@ -138,15 +138,6 @@ class TaskContractCompilerTest(unittest.TestCase):
             [
                 {
                     "check_id": "target_validation",
-                    "expected": "Module can be imported",
-                    "id": "VO:telegram-module:1",
-                    "kind": "trusted_command",
-                    "provenance": "task_contract",
-                    "requirement_ids": ["ACC:telegram-module:1", "REQ-2"],
-                    "target": "src/telegram/notifier.py",
-                },
-                {
-                    "check_id": "target_validation",
                     "expected": "Message delivery is reported",
                     "id": "VO:telegram-notifier:1",
                     "kind": "trusted_command",
@@ -155,6 +146,10 @@ class TaskContractCompilerTest(unittest.TestCase):
                     "target": "src/telegram/notifier.py",
                 },
             ],
+        )
+        self.assertNotIn(
+            "VO:telegram-module:1",
+            {item["id"] for item in payload["validation_obligations"]},
         )
         self.assertEqual(
             [operation["id"] for operation in payload["operations"]],
