@@ -2,6 +2,13 @@
 
 Task: {{TASK_ID}} {{TASK_TITLE}}
 
+Authorized project root: `{{PROJECT_DIR}}`
+
+For project code, pass repository-relative paths such as
+`src/package/module.py` to Write/Edit, or absolute paths beneath that exact
+root. Do not use the original checkout, `/tmp` scratch files, or any other
+directory: the policy gate will reject them.
+
 Spec:
 {{SPEC}}
 
