@@ -110,7 +110,13 @@ class DeepSeekAgentClient:
             assistant_message, tool_calls, text = self._normalize_message(choice.message)
             finish_reason = str(getattr(choice, "finish_reason", "") or "")
             expected = "tool_calls" if tool_calls else "stop"
-            if finish_reason != expected:
+            # A length-limited response may still contain a usable (or
+            # recoverably malformed) tool call.  Process it so the tool
+            # result can tell the model to repair the truncated arguments.
+            # Text-only length-limited responses remain rejected because they
+            # cannot be treated as a complete phase result.
+            accepted_truncated_tools = finish_reason == "length" and bool(tool_calls)
+            if finish_reason != expected and not accepted_truncated_tools:
                 raise ProviderOutcomeError(f"unaccepted DeepSeek outcome: {finish_reason or 'missing finish_reason'}")
             last_text = text or last_text
             if tool_calls:
@@ -118,6 +124,8 @@ class DeepSeekAgentClient:
                 for call in tool_calls:
                     is_error = False
                     try:
+                        if call.get("error"):
+                            raise ValueError(call["error"])
                         result = self.tools.execute(
                             call["name"], call["input"], self.tool_env, request.authority
                         )
@@ -187,7 +195,20 @@ class DeepSeekAgentClient:
         serialized_calls: list[dict] = []
         for tool_call in getattr(message, "tool_calls", None) or []:
             raw_arguments = tool_call.function.arguments or "{}"
-            arguments = json.loads(raw_arguments)
+            try:
+                arguments = json.loads(raw_arguments)
+            except json.JSONDecodeError as exc:
+                # DeepSeek may occasionally emit a truncated tool-call payload.
+                # Feed the error back to the model so it can correct the call.
+                arguments = {}
+                calls.append({"id": tool_call.id, "name": tool_call.function.name,
+                              "input": arguments, "error":
+                              f"Invalid JSON in tool arguments: {exc.msg} at character {exc.pos}. "
+                              f"Received: {raw_arguments[:500]}"})
+                serialized_calls.append({"id": tool_call.id, "type": "function",
+                                         "function": {"name": tool_call.function.name,
+                                                       "arguments": raw_arguments}})
+                continue
             calls.append(
                 {"id": tool_call.id, "name": tool_call.function.name, "input": arguments}
             )

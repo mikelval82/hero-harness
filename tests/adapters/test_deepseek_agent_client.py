@@ -44,6 +44,38 @@ def _response(*, text: str = "", tool_calls: list | None = None) -> SimpleNamesp
 
 
 class DeepSeekAgentClientTest(unittest.TestCase):
+    def test_recovers_from_truncated_tool_arguments(self) -> None:
+        malformed = SimpleNamespace(
+            id="call-bad",
+            function=SimpleNamespace(name="GraphSearch", arguments='{"query": "OrderService'),
+        )
+        completions = _FakeCompletions(
+            [_response(tool_calls=[malformed]), _response(text="recovered")]
+        )
+        registry = _Registry()
+        client = DeepSeekAgentClient.__new__(DeepSeekAgentClient)
+        client.tools = registry
+        client.tool_env = None
+        client.command_bus = None
+        client.model = "deepseek-v4-flash"
+        client.max_tokens = 256
+        client.max_retries = 1
+        client.events = SimpleNamespace(publish=lambda kind, payload: None)
+        client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        result = client.run_phase(
+            AgentRequest(
+                "test", "Use tools.", "Find it.", ("GraphSearch",), [],
+                PhaseAuthority(PhaseName.RESEARCH, ("GraphSearch",)), 3, 30
+            )
+        )
+
+        self.assertEqual(result.text, "recovered")
+        self.assertEqual(registry.calls, [])
+        tool_result = completions.calls[1]["messages"][-1]
+        self.assertEqual(tool_result["role"], "tool")
+        self.assertIn("Invalid JSON in tool arguments", tool_result["content"])
+
     def test_runs_openai_compatible_tool_loop(self) -> None:
         tool_call = SimpleNamespace(
             id="call-1",
@@ -146,6 +178,34 @@ class DeepSeekAgentClientTest(unittest.TestCase):
         client._client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions([response])))
         with self.assertRaisesRegex(ProviderOutcomeError, "length"):
             client.run_phase(AgentRequest("test", "", "", (), [], PhaseAuthority(PhaseName.RESEARCH, ()), 1, 30))
+
+    def test_length_limited_tool_call_can_be_repaired(self) -> None:
+        malformed = SimpleNamespace(
+            id="call-truncated",
+            function=SimpleNamespace(name="GraphSearch", arguments='{"query": "OrderService'),
+        )
+        first = _response(tool_calls=[malformed])
+        first.choices[0].finish_reason = "length"
+        completions = _FakeCompletions([first, _response(text="recovered")])
+        client = DeepSeekAgentClient.__new__(DeepSeekAgentClient)
+        client.tools = _Registry()
+        client.tool_env = None
+        client.command_bus = None
+        client.model = "deepseek-v4-flash"
+        client.max_tokens = 256
+        client.max_retries = 1
+        client.events = SimpleNamespace(publish=lambda kind, payload: None)
+        client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        result = client.run_phase(
+            AgentRequest(
+                "test", "Use tools.", "Find it.", ("GraphSearch",), [],
+                PhaseAuthority(PhaseName.RESEARCH, ("GraphSearch",)), 3, 30
+            )
+        )
+
+        self.assertEqual(result.text, "recovered")
+        self.assertIn("Invalid JSON in tool arguments", completions.calls[1]["messages"][-1]["content"])
 
 
 if __name__ == "__main__":
