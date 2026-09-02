@@ -136,9 +136,12 @@ class GraphProposeTool:
             "re-query and rebuild the batch. operations support add_node, update_node, remove_node, "
             "add_edge, remove_edge. Nodes require id, label, level (SYSTEM|PACKAGE|CODE), provenance "
             "(HUMAN|AGENT|ANALYZER), location (IN_REPOSITORY|EXTERNAL), intent (KEEP|CREATE|CHANGE|REMOVE); "
-            "optional parent_id, locator (observed node id like 'src/mod.py:Class'), description. "
+            "optional parent_id, locator (observed node id like 'src/mod.py:Class'), description, kind, "
+            "target_path, qualified_name, signature, docstring, satisfies, and acceptance. "
             "For CREATE nodes, set locator to the expected observed id (e.g. the future file path) so "
-            "the result can be verified after execution; without it the operation is unverifiable.",
+            "the result can be verified after execution; without it the operation is unverifiable. "
+            "For PACKAGE/CODE proposals, complete all applicable contract fields before proposing; "
+            "source filenames must use kind=module, not function.",
             {
                 "operation_id": {"type": "string"},
                 "base_revision": {"type": "integer"},
