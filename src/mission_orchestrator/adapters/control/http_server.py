@@ -311,7 +311,15 @@ def _handler_for(server: ControlHttpServer) -> type[BaseHTTPRequestHandler]:
                     elif action == "blocker":
                         payload = server.control.report_contract_blocker(execution_id, detail)
                     elif action == "amendment":
-                        payload = server.control.propose_contract_amendment(execution_id, detail)
+                        operations = body.get("operations")
+                        if operations is not None and not isinstance(operations, list):
+                            raise ValueError("operations must be a list")
+                        payload = server.control.propose_contract_amendment(
+                            execution_id,
+                            detail,
+                            operations=operations,
+                            operation_id=str(body.get("operation_id", "")),
+                        )
                     else:
                         raise ValueError(f"unknown contract execution action: {action}")
                     self._json(payload)

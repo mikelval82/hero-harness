@@ -6,6 +6,7 @@ READ_TOOLS = ("Read", "Glob", "Grep")
 ARTIFACT_TOOLS = (*READ_TOOLS, "Write")
 IMPL_TOOLS = (*ARTIFACT_TOOLS, "Edit", "Bash")
 DESIGN_TOOLS = (*ARTIFACT_TOOLS, "CodeGraph", "GraphQuery", "GraphPropose")
+IMPLEMENT_DESIGN_TOOLS = (*IMPL_TOOLS, "CodeGraph", "GraphQuery", "GraphPropose")
 REVIEW_TOOLS = (*ARTIFACT_TOOLS, "RunValidation")
 
 GRAPH = "__graph_instructions__"
@@ -100,7 +101,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "implementer.md",
         "implement-prompt.md",
         "status.md",
-        IMPL_TOOLS,
+        IMPLEMENT_DESIGN_TOOLS,
         75,
         1200,
         {
@@ -114,13 +115,14 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         },
         allow_project_writes=True,
         harness_write_paths=("status.md",),
+        harness_mutation_tools=("GraphPropose",),
     ),
     PhaseName.IMPLEMENT_BURSTS: PhaseConfig(
         PhaseName.IMPLEMENT_BURSTS,
         "implementer.md",
         "implement-burst-prompt.md",
         "status.md",
-        IMPL_TOOLS,
+        IMPLEMENT_DESIGN_TOOLS,
         20,
         300,
         {
@@ -133,6 +135,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         },
         allow_project_writes=True,
         harness_write_paths=("_burst_progress.md", "status.md"),
+        harness_mutation_tools=("GraphPropose",),
     ),
     PhaseName.REVIEW: PhaseConfig(
         PhaseName.REVIEW,
@@ -156,7 +159,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "implementer.md",
         "reimplement-prompt.md",
         "status.md",
-        IMPL_TOOLS,
+        IMPLEMENT_DESIGN_TOOLS,
         75,
         1200,
         {
@@ -168,6 +171,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         },
         allow_project_writes=True,
         harness_write_paths=("status.md",),
+        harness_mutation_tools=("GraphPropose",),
     ),
     PhaseName.COMPACT: PhaseConfig(
         PhaseName.COMPACT,

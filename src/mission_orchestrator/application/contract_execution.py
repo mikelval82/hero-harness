@@ -8,7 +8,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.application.contract_verifier import PythonContractVerifier
+from mission_orchestrator.application.design_realization import DesignRealizationStore
 from mission_orchestrator.application.services import AppServices
 from mission_orchestrator.domain.mission import MissionContext
 from mission_orchestrator.domain.session import MissionStage
@@ -187,8 +189,24 @@ class ContractExecutionService:
                 if item["state"] == "failed"
             ]
             raise ExecutionValidationError("; ".join(failures))
+        observed_revision = self._refresh_observed_graph()
         with self._lock:
             state, execution = self._require_active(execution_id)
+            contract = self._contract(str(execution["task_id"]))
+            before_commit = self.services.git.current_commit()
+            self._stage_contract_paths(contract)
+            self.services.git.final_commit(
+                str(self._task(str(execution["task_id"])).title),
+                f"Accepted contract task {execution['task_id']}",
+            )
+            final_commit = self.services.git.current_commit()
+            realization = DesignRealizationStore(self.services.artifacts).record(
+                task_id=str(execution["task_id"]),
+                contract=contract,
+                commit=final_commit,
+                observed_revision=observed_revision,
+                accepted=final_commit != str(execution.get("start_commit", before_commit)),
+            )
             if manage_workflow:
                 tasks = self.services.tasks.load()
                 index = next(
@@ -206,7 +224,6 @@ class ContractExecutionService:
                     else current.touch()
                 )
                 self.sessions.save(updated, expected_revision=current.revision)
-            final_commit = self.services.git.current_commit()
             execution.update(
                 {
                     "status": "completed",
@@ -214,10 +231,14 @@ class ContractExecutionService:
                     "ended_at": _now(),
                     "changed_files": self._changed_files(execution),
                     "final_commit": final_commit,
+                    "realization": realization,
                 }
             )
             self._save_state(state)
-            self.services.events.publish("contract_execution_completed", execution)
+            self.services.events.publish(
+                "contract_execution_completed",
+                execution | {"observed_revision": observed_revision},
+            )
             return dict(execution)
 
     def read_file(self, execution_id: str, path: str) -> dict[str, object]:
@@ -324,6 +345,8 @@ class ContractExecutionService:
                 )
             execution["heartbeat_at"] = _now()
             self._save_state(state)
+            observed_revision = self._refresh_observed_graph()
+            result["observed_revision"] = observed_revision
             self.services.events.publish(
                 "contract_execution_patch_applied",
                 {"execution_id": execution_id, **result},
@@ -396,6 +419,26 @@ class ContractExecutionService:
             if task.id == task_id:
                 return task
         raise ValueError(f"unknown task: {task_id}")
+
+    def _stage_contract_paths(self, contract: dict[str, object]) -> None:
+        paths: list[Path] = []
+        root = self.context.project_dir.resolve()
+        for node in contract.get("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            target_path = str(node.get("target_path", "")).strip()
+            if not target_path:
+                continue
+            target = (root / target_path).resolve()
+            if target != root and root not in target.parents:
+                raise ExecutionValidationError(f"contract target path escapes project: {target_path}")
+            paths.append(target)
+        self.services.git.stage_files(sorted(set(paths)))
+
+    def _refresh_observed_graph(self) -> int:
+        self.services.code_graph.build(self.context.project_dir)
+        path = self.context.harness_dir / "code_graph.db"
+        return SQLiteCodeGraph(path).observed_revision() if path.exists() else 0
 
     def _state(self) -> dict:
         raw = self.services.artifacts.read_text(EXECUTION_STATE, default="")

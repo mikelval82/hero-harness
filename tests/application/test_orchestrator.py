@@ -122,6 +122,7 @@ class FakeGit:
         self.staged: list[Path] = []
         self.workspace_changes: list[str] = []
         self.committed_changes: list[str] = []
+        self.commit_count = 0
 
     def detect_base_branch(self) -> str:
         return "main"
@@ -133,7 +134,7 @@ class FakeGit:
         return branch
 
     def current_commit(self) -> str:
-        return "test-head"
+        return "test-head" if self.commit_count == 0 else f"test-head-{self.commit_count}"
 
     def changed_files(self) -> list[str]:
         return list(self.workspace_changes)
@@ -145,7 +146,8 @@ class FakeGit:
         self.staged.extend(files)
 
     def final_commit(self, task_description: str, summary: str) -> None:
-        return None
+        if self.staged:
+            self.commit_count += 1
 
     def run_target_validation(self, project_dir: Path) -> bool:
         return True
