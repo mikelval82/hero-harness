@@ -10,17 +10,28 @@ from mission_orchestrator.application.review_evidence import ReviewEvidence
 from mission_orchestrator.ports.artifacts import ArtifactStore
 
 
-OBJECTIVE_RE = re.compile(r"^##\s+(Objective|Objetivo)\b", re.IGNORECASE | re.MULTILINE)
-DECISIONS_RE = re.compile(r"^##\s+(Key Decisions|Decisiones)\b", re.IGNORECASE | re.MULTILINE)
+SECTION_NUMBER_RE = r"(?:\d+(?:\.\d+)*[.)]?\s+)?"
+
+OBJECTIVE_RE = re.compile(
+    rf"^##\s+{SECTION_NUMBER_RE}(Objective|Objetivo)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+DECISIONS_RE = re.compile(
+    rf"^##\s+{SECTION_NUMBER_RE}(Key Decisions|Decisiones)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
 EXPECTED_RE = re.compile(
-    r"^##\s+(Expected Behavior|Behaviour|Comportamiento esperado|Behavior)\b",
+    rf"^##\s+{SECTION_NUMBER_RE}(Expected Behavior|Behaviour|Comportamiento esperado|Behavior)\b",
     re.IGNORECASE | re.MULTILINE,
 )
 PLAN_RE = re.compile(
-    r"^##\s+(Changes|Steps|Files|Implementation|Cambios|Pasos|Archivos|Implementacion|Implementación|Plan)\b",
+    rf"^##\s+{SECTION_NUMBER_RE}(Changes|Steps|Files|Implementation|Cambios|Pasos|Archivos|Implementacion|Implementación|Plan)\b",
     re.IGNORECASE | re.MULTILINE,
 )
-VERDICT_RE = re.compile(r"^##\s+(Verdict|Veredicto)\b", re.IGNORECASE | re.MULTILINE)
+VERDICT_RE = re.compile(
+    rf"^##\s+{SECTION_NUMBER_RE}(Verdict|Veredicto)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 class MarkdownGateEvaluator:

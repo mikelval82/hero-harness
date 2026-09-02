@@ -60,6 +60,20 @@ class GatesAndMarkdownTest(unittest.TestCase):
         result = MarkdownGateEvaluator(store).evaluate("spec", "spec.md")
         self.assertFalse(result.passed)
 
+    def test_plan_gate_accepts_numbered_implementation_heading(self) -> None:
+        store = MemoryArtifacts(
+            {
+                "plan.md": (
+                    "# Plan\n\n## 1. Objective\nCreate fixtures.\n\n"
+                    "## 6. Implementation\n1. Add the files.\n\n**STATUS: DONE**\n"
+                )
+            }
+        )
+
+        result = MarkdownGateEvaluator(store).evaluate("plan", "plan.md")
+
+        self.assertTrue(result.passed, result.detail)
+
     def test_status_files_and_verdict(self) -> None:
         text = "## Files\n- `src/app.py`\n- tests/test_app.py\n\n## Other\n- ignore.md\n"
         self.assertEqual([path.as_posix() for path in status_files(text)], ["src/app.py", "tests/test_app.py"])
