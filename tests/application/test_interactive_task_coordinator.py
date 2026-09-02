@@ -218,7 +218,7 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
             self.assertEqual(executed.session.stage, MissionStage.COMPLETED)
             self.assertEqual(agent.phases, ["spec", "plan", "implement", "review", "report"])
             self.assertEqual(services.tasks.load()[0].status.value, "completed")
-            self.assertTrue(git.merged)
+            self.assertFalse(git.merged)
             execution = coordinator.executions.current_execution()
             self.assertEqual(execution["actor"], "mission")
             self.assertEqual(execution["status"], "completed")
@@ -289,7 +289,7 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
             self.assertEqual(services.tasks.load()[0].status.value, "pending")
             self.assertFalse(services.artifacts.exists("_amendment_pending.json"))
 
-    def test_reconciliation_blocks_merge_after_report_is_versioned(self) -> None:
+    def test_reconciliation_blocks_the_task_before_it_is_accepted(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
             root = Path(raw)
             agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
@@ -344,7 +344,7 @@ class InteractiveTaskCoordinatorTest(unittest.TestCase):
 
             self.assertEqual(blocked.session.stage, MissionStage.BLOCKED)
             self.assertIn("divergence: create:ghost", blocked.detail)
-            self.assertIsNotNone(catalog.get("mission/report"))
+            self.assertIsNone(catalog.get("mission/report"))
             self.assertFalse(git.merged)
 
 

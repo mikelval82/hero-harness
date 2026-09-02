@@ -128,7 +128,13 @@ class ContractExecutionServiceTest(unittest.TestCase):
 
         self.assertTrue(verification["passed"])
         self.assertEqual(completed["status"], "completed")
-        self.assertEqual(completed["final_commit"], "test-head")
+        self.assertEqual(completed["final_commit"], "test-head-1")
+        self.assertEqual(completed["realization"]["status"], "accepted")
+        self.assertEqual(completed["realization"]["nodes"], ["notifier"])
+        self.assertEqual(
+            json.loads(self.services.artifacts.read_text("design-realization.json"))["tasks"]["T-1"]["commit"],
+            "test-head-1",
+        )
         self.assertIs(self.services.tasks.load()[0].status, TaskStatus.COMPLETED)
         self.assertIs(self.sessions.load(self.context.mission_tag).stage, MissionStage.COMPLETED)
 

@@ -7,7 +7,7 @@ from mission_orchestrator.application.context_compactor import ContextCompactor
 from mission_orchestrator.application.contract_execution import ContractExecutionService
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.phase_executor import PhaseExecutor
-from mission_orchestrator.application.pipeline_definitions import mode_should_merge, task_pipeline_for
+from mission_orchestrator.application.pipeline_definitions import task_pipeline_for
 from mission_orchestrator.application.preparation_coordinator import (
     InvalidSessionAction,
     PreparationResult,
@@ -284,13 +284,17 @@ class InteractiveTaskCoordinator:
             self._save(running, reconciling)
             self.services.code_graph.build(self.context.project_dir)
             refreshed = self.services.tasks.load()
-            _, reasons = Reconciler(
+            reconciliation, reasons = Reconciler(
                 self.context.harness_dir,
                 self.services.artifacts,
             ).evaluate(refreshed)
             self.documents.capture_task_documents(task.id)
             if self._amendment_requested():
                 return self._pause_for_amendment(reconciling)
+            task_reasons = self._task_reconciliation_reasons(reconciliation, task)
+            if task_reasons:
+                self.services.tasks.update(index, TaskStatus.FAILED, "; ".join(task_reasons))
+                return self._block(reconciling, "; ".join(task_reasons))
             if any(item.status is TaskStatus.PENDING for item in refreshed):
                 next_session = reconciling.move_to(
                     MissionStage.READY,
@@ -310,7 +314,6 @@ class InteractiveTaskCoordinator:
                     return self._pause_for_amendment(reconciling)
                 if reasons:
                     return self._block(reconciling, "; ".join(reasons))
-                self._commit_and_merge(result.summary)
                 self.services.events.publish(
                     "mission_finalized",
                     {
@@ -414,18 +417,18 @@ class InteractiveTaskCoordinator:
         )
         return PreparationResult(review, detail="execution paused for design amendment")
 
-    def _commit_and_merge(self, summary: str) -> None:
-        if not mode_should_merge(self.context.mode):
-            return
-        try:
-            self.services.git.final_commit(self.context.task, summary)
-            merged = self.services.git.merge_to_develop(self.context.branch)
-        except Exception as error:
-            self.services.notifier.notify(f"Merge failed: {error}")
-            return
-        if merged:
-            self.services.notifier.notify(
-                f"Merge successful: {self.context.branch} -> develop"
-            )
-        else:
-            self.services.notifier.notify("Merge skipped or failed validation.")
+    @staticmethod
+    def _task_reconciliation_reasons(reconciliation, task: Task) -> list[str]:  # noqa: ANN001
+        if reconciliation is None:
+            return []
+        reasons = []
+        for check in reconciliation.checks:
+            if check.operation_id not in task.covers:
+                continue
+            if check.state.value == "divergent":
+                reasons.append(f"divergence: {check.operation_id} ({check.detail})")
+            elif check.state.value == "pending":
+                reasons.append(f"operation not materialized: {check.operation_id} ({check.detail})")
+            elif check.state.value == "unverifiable" and check.blocking:
+                reasons.append(f"required operation unverifiable: {check.operation_id} ({check.detail})")
+        return reasons

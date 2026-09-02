@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
 from mission_orchestrator.adapters.design.store import DesignStore
+from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemArtifactStore
 from mission_orchestrator.application.code_graph_queries import (
     CODE_GRAPH_ACTIONS,
     MAX_CODE_GRAPH_ROWS,
@@ -158,7 +159,32 @@ class GraphProposeTool:
             operations=[op for op in operations if isinstance(op, dict)],
         )
         revision = result.revision if result.status.value != "CONFLICT" else store.current_revision()
+        if result.status.value == "APPLIED":
+            _request_execution_amendment(env, revision)
         return json.dumps(
             {"status": result.status.value, "design_revision": revision, "detail": result.detail},
             ensure_ascii=False,
         )
+
+
+def _request_execution_amendment(env: ToolEnvironment, design_revision: int) -> None:
+    """Turn an implementation-time graph change into a safe-boundary amendment."""
+    session_path = env.harness_dir / "_session.json"
+    try:
+        session = json.loads(session_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if session.get("stage") not in {"executing", "reconciling"}:
+        return
+    FilesystemArtifactStore(env.harness_dir).write_text(
+        "_amendment_pending.json",
+        json.dumps(
+            {
+                "design_revision": design_revision,
+                "requested_session_revision": session.get("revision", 0),
+                "source": "mission_graph_proposal",
+            },
+            indent=2,
+        )
+        + "\n",
+    )

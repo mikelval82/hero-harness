@@ -20,6 +20,10 @@ Approved task contract (authoritative):
 Keep every burst within this contract. Do not rename, relocate, weaken, or
 remove an obligation without requesting a design amendment.
 
+If implementation reveals a required design change, use GraphQuery and then
+GraphPropose with an atomic, evidence-backed update. Execution will pause at a
+safe boundary for human amendment review; do not silently apply that change.
+
 {{GRAPH_INSTRUCTIONS}}
 
 {{BURST_FINAL_INSTRUCTIONS}}

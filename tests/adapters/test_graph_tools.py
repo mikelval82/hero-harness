@@ -104,6 +104,17 @@ class GraphToolsTest(unittest.TestCase):
         view = json.loads(self.query.execute({"scope": "design"}, self.env))
         self.assertEqual({node["id"] for node in view["nodes"]}, {"n1"})
 
+    def test_graph_proposal_during_execution_requests_a_safe_boundary_amendment(self) -> None:
+        (self.harness / "_session.json").write_text(
+            json.dumps({"stage": "executing", "revision": 7}), encoding="utf-8"
+        )
+
+        self.propose.execute(_propose_ops("op-amend", 0, [_node_op("n1")]), self.env)
+
+        pending = json.loads((self.harness / "_amendment_pending.json").read_text(encoding="utf-8"))
+        self.assertEqual(pending["design_revision"], 1)
+        self.assertEqual(pending["source"], "mission_graph_proposal")
+
     def test_b4_invalid_operation_rejected_with_detail(self) -> None:
         outcome = json.loads(
             self.propose.execute(
@@ -165,7 +176,9 @@ class GraphToolsTest(unittest.TestCase):
             self.assertIn("CodeGraph", PHASES[phase].tools)
             self.assertIn("GraphQuery", PHASES[phase].tools)
             self.assertIn("GraphPropose", PHASES[phase].tools)
-        for phase in (PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT):
+        for phase in (PhaseName.RESEARCH, PhaseName.GRILL, PhaseName.IMPLEMENT, PhaseName.IMPLEMENT_BURSTS, PhaseName.REIMPLEMENT):
+            self.assertIn("GraphPropose", PHASES[phase].tools)
+        for phase in (PhaseName.SPEC, PhaseName.PLAN, PhaseName.REVIEW):
             self.assertNotIn("GraphPropose", PHASES[phase].tools)
 
     def test_b8_design_filters(self) -> None:

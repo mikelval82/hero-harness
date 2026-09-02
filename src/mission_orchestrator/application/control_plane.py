@@ -9,6 +9,7 @@ from mission_orchestrator.adapters.design.store import DesignStore
 from mission_orchestrator.application.code_graph_queries import query_mission_code_graph
 from mission_orchestrator.application.code_questions import CodeQuestionService
 from mission_orchestrator.application.contract_execution import ContractExecutionService
+from mission_orchestrator.application.design_realization import DesignRealizationStore
 from mission_orchestrator.application.document_service import MissionDocumentService
 from mission_orchestrator.application.interactive_task_coordinator import InteractiveTaskCoordinator
 from mission_orchestrator.application.preparation_coordinator import PreparationCoordinator, PreparationResult
@@ -140,8 +141,34 @@ class MissionControlPlane:
     def report_contract_blocker(self, execution_id: str, detail: str) -> dict[str, object]:
         return self._execution_service().report_blocker(execution_id, detail)
 
-    def propose_contract_amendment(self, execution_id: str, detail: str) -> dict[str, object]:
+    def propose_contract_amendment(
+        self,
+        execution_id: str,
+        detail: str,
+        *,
+        operations: list[dict] | None = None,
+        operation_id: str = "",
+    ) -> dict[str, object]:
+        design: dict[str, object] | None = None
+        if operations:
+            store = DesignStore(self.context.harness_dir / "design.db")
+            result = store.apply(
+                operation_id=operation_id or f"chat-amendment-{uuid.uuid4().hex}",
+                author="AGENT",
+                base_revision=store.current_revision(),
+                operations=operations,
+            )
+            if result.status is not ApplyStatus.APPLIED:
+                raise ValueError(result.detail or f"design amendment was {result.status.value.lower()}")
+            design = {
+                "status": result.status.value,
+                "design_revision": result.revision,
+                "amendment": self._record_design_amendment(result.revision),
+            }
+            self.services.events.publish("design_changed", design)
         result = self._execution_service().propose_amendment(execution_id, detail)
+        if design is not None:
+            return result | {"design": design, "session": self.sessions.load(self.context.mission_tag).to_json()}
         current = self.sessions.load(self.context.mission_tag)
         preparation = self.preparation.request_amendment(
             expected_session_revision=current.revision,
@@ -196,6 +223,7 @@ class MissionControlPlane:
             "observed_revision": facts.observed_revision() if facts is not None else 0,
             "nodes": nodes,
             "edges": [edge.__dict__ for edge in store.edges()],
+            "realization": DesignRealizationStore(self.services.artifacts).view(),
             "history": [
                 {
                     "seq": item.seq,
