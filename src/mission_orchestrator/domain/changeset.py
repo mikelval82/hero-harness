@@ -54,8 +54,12 @@ def compile_changeset(snapshot: dict, observed_ids: set[str]) -> ChangeSet:
     skipped: list[SkippedChange] = []
     issues: list[ChangeIssue] = []
     nodes = {node["id"]: node for node in snapshot.get("nodes", [])}
+    prepared_nodes: dict[str, dict] = {}
+    resolving: set[str] = set()
 
-    for node in nodes.values():
+    for original_node in nodes.values():
+        node = _prepare_target_node(original_node, nodes, prepared_nodes, resolving)
+        nodes[node["id"]] = node
         intent = node.get("intent", "KEEP")
         locator = node.get("locator") or _target_locator(node)
         if intent == "CREATE" and not locator:
@@ -149,6 +153,82 @@ def _locator_from_label(label: str) -> str | None:
     if re.fullmatch(r"[\w.\-]+(/[\w.\-]+)+(:[\w.]+)?", label):
         return label
     return None
+
+
+_SOURCE_SUFFIXES = (
+    "py", "pyi", "js", "jsx", "mjs", "cjs", "ts", "tsx", "java", "go",
+    "rs", "rb", "php", "cs", "c", "h", "cc", "cpp", "hpp",
+)
+
+
+def _prepare_target_node(
+    node: dict,
+    nodes: dict[str, dict],
+    prepared_nodes: dict[str, dict],
+    resolving: set[str],
+) -> dict:
+    """Fill target metadata only when the design hierarchy makes it deterministic."""
+    node_id = str(node.get("id", ""))
+    if node_id in prepared_nodes:
+        return prepared_nodes[node_id]
+    if node_id in resolving:
+        return node
+    resolving.add(node_id)
+
+    locator = node.get("locator") or _target_locator(node) or _locator_from_label(str(node.get("label", "")))
+    if not locator:
+        parent = nodes.get(str(node.get("parent_id", "")))
+        if parent:
+            parent = _prepare_target_node(parent, nodes, prepared_nodes, resolving)
+            parent_locator = parent.get("locator") or _target_locator(parent)
+            parent_path = _locator_path(parent_locator)
+            if parent_path:
+                node_kind = str(node.get("kind", "")).lower()
+                label = str(node.get("label", ""))
+                if node_kind == "module" or _source_filename(label):
+                    filename = _source_filename(label)
+                    if filename:
+                        directory = parent_path.rsplit("/", 1)[0] if _is_source_path(parent_path) else parent_path
+                        locator = "/".join(part for part in (directory, filename) if part)
+                elif _is_source_path(parent_path):
+                    symbol = str(node.get("qualified_name", "")).strip() or _identifier_from_label(label)
+                    if symbol:
+                        locator = f"{parent_path}:{symbol}"
+
+    updates: dict[str, str] = {}
+    if locator and not node.get("locator"):
+        updates["locator"] = locator
+    if locator and not node.get("target_path"):
+        path = _locator_path(locator)
+        if path:
+            updates["target_path"] = path
+    prepared = node | updates if updates else node
+    prepared_nodes[node_id] = prepared
+    resolving.discard(node_id)
+    return prepared
+
+
+def _locator_path(locator: object) -> str:
+    value = str(locator or "").strip().replace("\\", "/")
+    return value.split(":", 1)[0] if value else ""
+
+
+def _is_source_path(path: str) -> bool:
+    return path.lower().endswith(tuple(f".{suffix}" for suffix in _SOURCE_SUFFIXES))
+
+
+def _source_filename(label: str) -> str | None:
+    match = re.search(
+        rf"(?<![\w/])([A-Za-z0-9_.-]+\.(?:{'|'.join(_SOURCE_SUFFIXES)}))(?:$|[\s)])",
+        label,
+        re.IGNORECASE,
+    )
+    return match.group(1) if match else None
+
+
+def _identifier_from_label(label: str) -> str | None:
+    match = re.search(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", label)
+    return match.group(1) if match else None
 
 
 def _target_locator(node: dict) -> str | None:

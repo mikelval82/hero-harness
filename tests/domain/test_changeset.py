@@ -155,6 +155,51 @@ class ChangesetCompilerTest(unittest.TestCase):
         self.assertEqual([op.id for op in result.operations], ["create:case-index-py"])
         self.assertEqual(result.operations[0].locator, "tools/case_index.py")
 
+    def test_cde_a06_create_derives_nested_targets_from_parent_module(self) -> None:
+        result = compile_changeset(
+            _snapshot(
+                [
+                    _node(
+                        "package",
+                        "KEEP",
+                        level="PACKAGE",
+                        locator="src/hero_graph_lab/__init__.py",
+                    ),
+                    _node(
+                        "adapter",
+                        "CREATE",
+                        label="markdown_adapter.py",
+                        kind="module",
+                        level="PACKAGE",
+                        parent_id="package",
+                    ),
+                    _node(
+                        "extractor",
+                        "CREATE",
+                        label="MarkdownGraphExtractor",
+                        kind="class",
+                        parent_id="adapter",
+                    ),
+                    _node(
+                        "extract",
+                        "CREATE",
+                        label="extract_markdown_graph(root, markdown_files)",
+                        kind="function",
+                        parent_id="adapter",
+                    ),
+                ]
+            ),
+            observed_ids={"src/hero_graph_lab/__init__.py"},
+        )
+
+        self.assertEqual(result.issues, ())
+        operations = {operation.target_node: operation for operation in result.operations}
+        self.assertEqual(operations["adapter"].target_path, "src/hero_graph_lab/markdown_adapter.py")
+        self.assertEqual(operations["adapter"].locator, "src/hero_graph_lab/markdown_adapter.py")
+        self.assertEqual(operations["extractor"].target_path, "src/hero_graph_lab/markdown_adapter.py")
+        self.assertEqual(operations["extractor"].locator, "src/hero_graph_lab/markdown_adapter.py:MarkdownGraphExtractor")
+        self.assertEqual(operations["extract"].locator, "src/hero_graph_lab/markdown_adapter.py:extract_markdown_graph")
+
     def test_c10_create_with_prose_label_keeps_locator_none(self) -> None:
         result = compile_changeset(
             _snapshot(
