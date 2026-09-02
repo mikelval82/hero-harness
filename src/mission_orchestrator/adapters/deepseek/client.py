@@ -113,9 +113,26 @@ class DeepSeekAgentClient:
             # A length-limited response may still contain a usable (or
             # recoverably malformed) tool call.  Process it so the tool
             # result can tell the model to repair the truncated arguments.
-            # Text-only length-limited responses remain rejected because they
-            # cannot be treated as a complete phase result.
             accepted_truncated_tools = finish_reason == "length" and bool(tool_calls)
+            if finish_reason == "length" and not tool_calls:
+                # A phase can hit the output limit while composing the next
+                # tool call or artifact instructions. Preserve the partial
+                # assistant turn and ask DeepSeek to continue in the same
+                # conversation; rejecting it here loses recoverable context.
+                if assistant_message.get("content"):
+                    messages.append(assistant_message)
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your previous response was truncated by the output limit. "
+                            "Continue from exactly where it stopped, do not repeat completed "
+                            "work, and use the available tools to finish the requested phase."
+                        ),
+                    }
+                )
+                last_text = text or last_text
+                continue
             if finish_reason != expected and not accepted_truncated_tools:
                 raise ProviderOutcomeError(f"unaccepted DeepSeek outcome: {finish_reason or 'missing finish_reason'}")
             last_text = text or last_text

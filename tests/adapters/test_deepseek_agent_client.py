@@ -5,6 +5,7 @@ import unittest
 from types import SimpleNamespace
 
 from mission_orchestrator.adapters.deepseek.client import DeepSeekAgentClient
+from mission_orchestrator.application.errors import MaxTurnsExceeded
 from mission_orchestrator.domain.phase import PhaseAuthority, PhaseName
 from mission_orchestrator.domain.provider_outcome import ProviderOutcomeError
 from mission_orchestrator.ports.agent_client import AgentRequest
@@ -176,8 +177,33 @@ class DeepSeekAgentClientTest(unittest.TestCase):
         client.max_retries = 1
         client.events = SimpleNamespace(publish=lambda kind, payload: None)
         client._client = SimpleNamespace(chat=SimpleNamespace(completions=_FakeCompletions([response])))
-        with self.assertRaisesRegex(ProviderOutcomeError, "length"):
+        with self.assertRaises(MaxTurnsExceeded):
             client.run_phase(AgentRequest("test", "", "", (), [], PhaseAuthority(PhaseName.RESEARCH, ()), 1, 30))
+
+    def test_length_limited_text_is_continued(self) -> None:
+        first = _response(text="partial phase output")
+        first.choices[0].finish_reason = "length"
+        completions = _FakeCompletions([first, _response(text="completed phase output")])
+        client = DeepSeekAgentClient.__new__(DeepSeekAgentClient)
+        client.tools = _Registry()
+        client.tool_env = None
+        client.command_bus = None
+        client.model = "deepseek-v4-flash"
+        client.max_tokens = 256
+        client.max_retries = 1
+        client.events = SimpleNamespace(publish=lambda kind, payload: None)
+        client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        result = client.run_phase(
+            AgentRequest("test", "Finish the artifact.", "Continue.", (), [],
+                         PhaseAuthority(PhaseName.RESEARCH, ()), 3, 30)
+        )
+
+        self.assertEqual(result.text, "completed phase output")
+        continuation_messages = completions.calls[1]["messages"]
+        self.assertEqual(continuation_messages[-2]["role"], "assistant")
+        self.assertEqual(continuation_messages[-2]["content"], "partial phase output")
+        self.assertIn("truncated by the output limit", continuation_messages[-1]["content"])
 
     def test_length_limited_tool_call_can_be_repaired(self) -> None:
         malformed = SimpleNamespace(
