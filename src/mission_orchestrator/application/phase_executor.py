@@ -104,7 +104,15 @@ class PhaseExecutor:
         except PhaseTimeout as exc:
             return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.TIMEOUT, str(exc), exc.metrics))
         except MaxTurnsExceeded as exc:
-            return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.MAX_TURNS, str(exc), exc.metrics))
+            if self._completed_preparation_after_max_turns(
+                phase,
+                config.gate_artifact,
+                evaluate_gate=evaluate_gate,
+                metrics=exc.metrics,
+            ):
+                result = exc.metrics
+            else:
+                return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.MAX_TURNS, str(exc), exc.metrics))
         except MaxRetriesExceeded as exc:
             return PhaseExecution(exc.metrics, self._blocked(phase, BlockKind.API_RETRIES, str(exc), exc.metrics))
         except ApiUsageLimitExceeded as exc:
@@ -149,6 +157,32 @@ class PhaseExecutor:
             },
         )
         return PhaseExecution(result, None)
+
+    def _completed_preparation_after_max_turns(
+        self,
+        phase: PhaseName,
+        gate_artifact: str | None,
+        *,
+        evaluate_gate: bool,
+        metrics: PhaseResult | None,
+    ) -> bool:
+        """Recover a completed preparation artifact after a model loop overruns.
+
+        Preparation agents may keep inspecting the repository after writing their
+        required documents.  Treating that as a hard failure is safe to avoid
+        only when the phase gate already proves the artifact is complete.  The
+        implementation and review phases deliberately remain strict.
+        """
+        if metrics is None or not evaluate_gate or phase not in {PhaseName.SPEC, PhaseName.PLAN}:
+            return False
+        if not gate_artifact:
+            return False
+        required = [gate_artifact]
+        if phase is PhaseName.PLAN:
+            required.append("decisions.md")
+        if any(not self.services.artifacts.exists(name) for name in required):
+            return False
+        return self.services.gates.evaluate(phase.value, gate_artifact).passed
 
     def _blocked(
         self,

@@ -53,6 +53,22 @@ class MaxTurnsAgent:
         return self.run_phase(request)
 
 
+class CompletedPlanMaxTurnsAgent:
+    def __init__(self, artifacts) -> None:  # noqa: ANN001
+        self.artifacts = artifacts
+
+    def run_phase(self, request):  # noqa: ANN001
+        self.artifacts.write_text(
+            "plan.md",
+            "# Plan\n\n## Implementation\nImplement it.\n\n**STATUS: DONE**\n",
+        )
+        self.artifacts.write_text("decisions.md", "# Decisions\n\nRecorded.\n")
+        raise MaxTurnsExceeded("maximum turns exceeded", PhaseResult("", 30, 12.5, 900, 100))
+
+    def run_conversation(self, request):  # noqa: ANN001
+        return self.run_phase(request)
+
+
 class DenyingAgent:
     def run_phase(self, request):  # noqa: ANN001
         raise ToolAuthorizationError(request.authority.phase.value, "Edit", "tool_not_allowed")
@@ -131,6 +147,22 @@ class PhaseProgressEventsTest(unittest.TestCase):
             self.assertEqual(ended[0]["turns"], 30)
             self.assertEqual(ended[0]["input_tokens"], 900)
             self.assertEqual(ended[0]["output_tokens"], 100)
+
+    def test_completed_plan_recovers_after_max_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            tmp = Path(raw)
+            agent = CompletedPlanMaxTurnsAgent(None)
+            services, context, _ = make_services(tmp, MissionMode.FOCUSED, agent=agent)
+            agent.artifacts = services.artifacts
+            events = RecordingEvents()
+            services.events = events
+
+            execution = PhaseExecutor(services, context).run(PhaseName.PLAN)
+
+            self.assertIsNone(execution.block)
+            ended = [payload for kind, payload in events.published if kind == "phase_ended"]
+            self.assertEqual(ended[-1]["outcome"], "completed")
+            self.assertEqual(ended[-1]["turns"], 30)
 
     def test_r1_authorization_rejection_blocks_phase_and_publishes_authority(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
