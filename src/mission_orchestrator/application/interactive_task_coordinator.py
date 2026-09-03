@@ -103,6 +103,7 @@ class InteractiveTaskCoordinator:
                 execution = self.phases.run(
                     phase,
                     variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                    complexity=task.complexity.value,
                 )
                 if phase is PhaseName.PLAN and not self.services.artifacts.exists("decisions.md"):
                     self.services.artifacts.write_text(
@@ -166,6 +167,7 @@ class InteractiveTaskCoordinator:
                         block = self.phases.run(
                             phase,
                             variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                            complexity=task.complexity.value,
                         ).block
                     self.documents.capture_task_documents(task.id)
                     if block is not None:
@@ -213,6 +215,8 @@ class InteractiveTaskCoordinator:
             block = self.phases.run(
                 PhaseName.REVIEW,
                 variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                complexity=task.complexity.value,
+                retry_count=1,
             ).block
             self.documents.capture_task_documents(task.id)
             if block is not None:
@@ -259,6 +263,8 @@ class InteractiveTaskCoordinator:
                 execution = self.phases.run(
                     phase,
                     variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                    complexity=task.complexity.value,
+                    retry_count=1,
                 )
                 if phase is PhaseName.PLAN and not self.services.artifacts.exists("decisions.md"):
                     self.services.artifacts.write_text(

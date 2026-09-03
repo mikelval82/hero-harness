@@ -30,6 +30,17 @@ from mission_orchestrator.domain.mission import GateMode, MissionContext, Missio
 from mission_orchestrator.ports.tool_registry import ToolEnvironment
 
 
+PROVIDER_DEFAULT_MODELS = {
+    "anthropic": "claude-opus-4-6",
+    "deepseek": "deepseek-v4-flash",
+}
+DEEPSEEK_MODEL_TIERS = {
+    "cheap": "deepseek-v4-flash",
+    "default": "deepseek-v4-flash",
+    "deep": "deepseek-v4-pro",
+}
+
+
 @dataclass(frozen=True)
 class RuntimeConfig:
     task: str
@@ -52,6 +63,25 @@ class MissionRuntime:
     workspace: WorkspaceInfo
     registry: MissionRegistry
     commands: QueueCommandBus
+
+
+def model_capabilities(provider: str, forced_model: str | None = None) -> dict[str, str]:
+    """Resolve deterministic model tiers while preserving a global override."""
+
+    if forced_model:
+        return {tier: forced_model for tier in ("cheap", "default", "deep")}
+    default_model = PROVIDER_DEFAULT_MODELS.get(provider)
+    if not default_model:
+        raise ValueError(f"unsupported HARNESS provider: {provider}")
+    defaults = (
+        DEEPSEEK_MODEL_TIERS
+        if provider == "deepseek"
+        else {tier: default_model for tier in ("cheap", "default", "deep")}
+    )
+    return {
+        tier: (os.environ.get(f"HARNESS_MODEL_{tier.upper()}") or defaults[tier]).strip()
+        for tier in ("cheap", "default", "deep")
+    }
 
 
 def build_runtime(config: RuntimeConfig) -> MissionRuntime:
@@ -95,6 +125,8 @@ def build_runtime(config: RuntimeConfig) -> MissionRuntime:
     conversation = SqliteConversationLog(workspace.harness_dir / "conversation.db")
     provider = (config.provider or os.environ.get("HARNESS_PROVIDER", "anthropic")).strip().lower()
     model = config.model or os.environ.get("HARNESS_MODEL")
+    capabilities = model_capabilities(provider, model)
+    initial_model = capabilities["default"]
     agent_options = {
         "tools": tool_registry,
         "tool_env": ToolEnvironment(project_dir, workspace.harness_dir),
@@ -105,20 +137,19 @@ def build_runtime(config: RuntimeConfig) -> MissionRuntime:
     if provider == "anthropic":
         agent = AnthropicAgentClient(
             **agent_options,
-            **({"model": model} if model else {}),
+            model=initial_model,
         )
     elif provider == "deepseek":
         agent = DeepSeekAgentClient(
             **agent_options,
-            **({"model": model} if model else {}),
+            model=initial_model,
         )
     else:
         raise ValueError(f"unsupported HARNESS provider: {provider}")
-    selected_model = model or agent.model
     agent = PolicyAgentClient(
         agent=agent,
         policy=DeterministicModelPolicy(provider, forced_model=model),
-        capabilities={provider: {"cheap": selected_model, "default": selected_model, "deep": selected_model}},
+        capabilities={provider: capabilities},
         events=events,
     )
     repo_root = Path(__file__).resolve().parents[2]

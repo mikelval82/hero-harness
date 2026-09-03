@@ -93,12 +93,18 @@ usa `ANTHROPIC_API_KEY`; DeepSeek usa `DEEPSEEK_API_KEY` y, de forma opcional,
 `DEEPSEEK_BASE_URL`. HARNESS carga `.env` y `.env.local` sin sobrescribir
 variables ya definidas.
 
-El proveedor puede seleccionarse con `--provider` o `HARNESS_PROVIDER`; el
-modelo, con `--model` o `HARNESS_MODEL`. DeepSeek usa `deepseek-v4-flash` por defecto:
+El proveedor puede seleccionarse con `--provider` o `HARNESS_PROVIDER`.
+`--model` y `HARNESS_MODEL` fuerzan un único modelo para todas las fases. Sin
+ese override, DeepSeek aplica una política por niveles: `deepseek-v4-flash`
+para investigación, extracción, informes e implementación S/M, y
+`deepseek-v4-pro` para grill, estructura, especificación, planificación,
+revisión, reimplementación, tareas L y reintentos. Los niveles se pueden
+personalizar con `HARNESS_MODEL_CHEAP`, `HARNESS_MODEL_DEFAULT` y
+`HARNESS_MODEL_DEEP`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo `
-    --provider deepseek --model deepseek-v4-flash
+    --provider deepseek
 ```
 
 ## Ejecutar HARNESS con Graph Lab

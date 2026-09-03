@@ -6,9 +6,9 @@ from typing import Mapping
 from mission_orchestrator.domain.model_policy import ModelSelection
 
 
-CHEAP_PHASES = frozenset({"compact", "consolidate", "report", "report_plan"})
-DEEP_PHASES = frozenset({"grill", "review", "reimplement"})
-POLICY_VERSION = "o4-v1"
+CHEAP_PHASES = frozenset({"research", "compact", "consolidate", "report", "report_plan"})
+DEEP_PHASES = frozenset({"grill", "structure", "spec", "plan", "review", "reimplement"})
+POLICY_VERSION = "o5-v1"
 
 
 @dataclass(frozen=True)

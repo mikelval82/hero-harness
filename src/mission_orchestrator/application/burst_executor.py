@@ -23,6 +23,7 @@ class BurstExecutor:
             return self.phase_executor.run(
                 PhaseName.IMPLEMENT,
                 variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                complexity=task.complexity.value,
             ).block
         for index, step in enumerate(steps, start=1):
             progress = artifacts.read_text("_burst_progress.md", default="(not available yet)")
@@ -38,6 +39,7 @@ class BurstExecutor:
                 PhaseName.IMPLEMENT_BURSTS,
                 variables=variables,
                 evaluate_gate=final,
+                complexity=task.complexity.value,
             )
             if outcome.block:
                 return outcome.block
@@ -52,4 +54,3 @@ class BurstExecutor:
             "This is the last burst. Create status.md from scratch, run mission-validate.* "
             "when present, and list modified files under ## Files."
         )
-

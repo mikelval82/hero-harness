@@ -15,7 +15,7 @@ class _Policy:
 
     def select(self, phase, complexity, retry_count, capabilities):
         self.args = (phase, complexity, retry_count, capabilities)
-        return ModelSelection("anthropic", "deep", "deep", "retry escalation", "o4-v1")
+        return ModelSelection("anthropic", "deep", "deep", "retry escalation", "o5-v1")
 
 
 class _Agent:
