@@ -194,6 +194,59 @@ class TaskContractCompilerTest(unittest.TestCase):
             self.artifacts.read_text(path),
         )
 
+    def test_context_targets_anchor_a_task_without_becoming_obligations(self) -> None:
+        self.snapshot["nodes"].append(
+            {
+                "id": "server",
+                "kind": "module",
+                "target_path": "src/server.py",
+                "qualified_name": "",
+                "docstring": "",
+                "intent": "KEEP",
+            }
+        )
+        self.snapshot["edges"].append(
+            {
+                "source": "telegram-module",
+                "target": "server",
+                "relation": "depends_on",
+                "intent": "KEEP",
+            }
+        )
+        self.artifacts.write_text("approved_snapshot.json", json.dumps(self.snapshot))
+        self.changeset["operations"].append(
+            {
+                "id": "connect:telegram-module-server",
+                "kind": "CONNECT",
+                "source": "telegram-module",
+                "target": "server",
+                "relation": "depends_on",
+            }
+        )
+        self.artifacts.write_text("changeset.json", json.dumps(self.changeset))
+
+        paths = TaskContractCompiler(self.artifacts).compile(
+            [
+                Task.from_json(
+                    {
+                        "id": "T-1",
+                        "title": "Implement notifier",
+                        "covers": ["create:telegram-notifier", "connect:telegram-module-server"],
+                        "target_nodes": ["telegram-notifier", "telegram-module", "server"],
+                    }
+                )
+            ]
+        )
+        payload = json.loads(self.artifacts.read_text(paths["T-1"]))
+        scopes = {node["id"]: node["verification_scope"] for node in payload["nodes"]}
+        self.assertEqual(scopes["telegram-notifier"], "required")
+        self.assertEqual(scopes["telegram-module"], "context")
+        self.assertEqual(scopes["server"], "context")
+        self.assertEqual(
+            [item["id"] for item in payload["validation_obligations"]],
+            ["VO:telegram-notifier:1"],
+        )
+
     def test_cde_a07_all_contractual_phases_share_task_contract_include(self) -> None:
         for phase in (
             PhaseName.SPEC,

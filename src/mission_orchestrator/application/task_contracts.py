@@ -38,8 +38,9 @@ class TaskContractCompiler:
             if not SAFE_SEGMENT.fullmatch(task.id):
                 raise ValueError(f"invalid task id for contract artifact: {task.id!r}")
             covered = self._covered_operations(task, operations)
-            target_ids = self._target_ids(task, covered, nodes)
-            relationships = self._relationships(snapshot, target_ids)
+            owned_ids = self._owned_ids(covered, nodes)
+            target_ids = self._target_ids(task, covered, nodes, owned_ids)
+            relationships = self._relationships(snapshot, owned_ids, covered)
             for relationship in relationships:
                 target_ids.add(str(relationship["source"]))
                 target_ids.add(str(relationship["target"]))
@@ -49,7 +50,11 @@ class TaskContractCompiler:
                     f"task {task.id} relationship references unknown target node: "
                     f"{unknown_relationship_nodes[0]}"
                 )
-            task_nodes = [nodes[node_id] for node_id in sorted(target_ids)]
+            task_nodes = [
+                nodes[node_id]
+                | {"verification_scope": "required" if node_id in owned_ids else "context"}
+                for node_id in sorted(target_ids)
+            ]
             obligation_node_ids = {
                 str(operation["target_node"])
                 for operation in covered
@@ -130,27 +135,60 @@ class TaskContractCompiler:
         return [operations[operation_id] for operation_id in sorted(task.covers)]
 
     @staticmethod
-    def _target_ids(task: Task, operations: list[dict], nodes: dict[str, dict]) -> set[str]:
-        target_ids = set(task.target_nodes)
+    def _target_ids(
+        task: Task,
+        operations: list[dict],
+        nodes: dict[str, dict],
+        owned_ids: set[str],
+    ) -> set[str]:
+        requested_ids = set(task.target_nodes)
         for operation in operations:
             for key in ("target_node", "source", "target"):
                 value = operation.get(key)
                 if value:
-                    target_ids.add(str(value))
-        unknown = sorted(target_ids - nodes.keys())
+                    requested_ids.add(str(value))
+        unknown = sorted(requested_ids - nodes.keys())
         if unknown:
             raise ValueError(f"task {task.id} references unknown target node: {unknown[0]}")
-        return target_ids
+        return set(owned_ids)
 
     @staticmethod
-    def _relationships(snapshot: dict, target_ids: set[str]) -> list[dict]:
+    def _owned_ids(operations: list[dict], nodes: dict[str, dict]) -> set[str]:
+        owned_ids = {
+            str(operation["target_node"])
+            for operation in operations
+            if operation.get("target_node")
+        }
+        unknown = sorted(owned_ids - nodes.keys())
+        if unknown:
+            raise ValueError(f"operation references unknown target node: {unknown[0]}")
+        return owned_ids
+
+    @staticmethod
+    def _relationships(snapshot: dict, owned_ids: set[str], operations: list[dict]) -> list[dict]:
+        explicit = {
+            (
+                str(operation.get("source", "")),
+                str(operation.get("target", "")),
+                str(operation.get("relation", "")).lower(),
+            )
+            for operation in operations
+            if operation.get("source") and operation.get("target") and operation.get("relation")
+        }
         relationships = []
         for edge in snapshot.get("edges", []):
             if edge.get("intent", "KEEP") == "REMOVE":
                 continue
-            if edge.get("source") not in target_ids and edge.get("target") not in target_ids:
-                continue
+            source = str(edge.get("source", ""))
+            target = str(edge.get("target", ""))
             relation = str(edge.get("relation", "")).lower()
+            selected = (source, target, relation) in explicit
+            selected = selected or (
+                relation in {"contains", "inherits"}
+                and (source in owned_ids or target in owned_ids)
+            )
+            if not selected:
+                continue
             if relation in {"contains", "inherits"}:
                 verification = "hard"
             elif relation == "imports" and edge.get("provenance") == "ANALYZER":

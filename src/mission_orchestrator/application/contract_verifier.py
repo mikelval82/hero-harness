@@ -101,6 +101,9 @@ class PythonContractVerifier:
         checks: list[ContractCheck],
     ) -> None:
         node_id = str(node["id"])
+        if node.get("verification_scope") == "context":
+            checks.append(self._check(node_id, "scope", ContractCheckState.ADVISORY, "context anchor"))
+            return
         if node.get("location", "IN_REPOSITORY") != "IN_REPOSITORY":
             checks.append(self._check(node_id, "location", ContractCheckState.ADVISORY, "external node"))
             return
