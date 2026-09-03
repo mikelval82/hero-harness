@@ -18,6 +18,42 @@ from tests.application.test_orchestrator import FakeAgent, make_services
 
 
 class InteractiveTaskCoordinatorTest(unittest.TestCase):
+    def test_retry_preparation_resumes_from_failed_spec(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
+            root = Path(raw)
+            agent = FakeAgent(FilesystemArtifactStore(root / "initial"))
+            services, context, _ = make_services(root, MissionMode.FULL, agent=agent)
+            agent.artifacts = services.artifacts
+            services.tasks.save([Task("T-1", "Implement one")])
+            blocked = MissionSession(
+                context.mission_tag,
+                stage=MissionStage.BLOCKED,
+                revision=8,
+                active_task_id="T-1",
+                blocked_reason=(
+                    "policy | phase=spec | tool authorization rejected: "
+                    "phase=spec tool=Write reason=harness_artifact_not_allowed"
+                ),
+            )
+            services.artifacts.write_text("_session.json", json.dumps(blocked.to_json()))
+            sessions = FilesystemMissionSessionStore(services.artifacts)
+            coordinator = InteractiveTaskCoordinator(
+                services=services,
+                context=context,
+                sessions=sessions,
+                documents=MissionDocumentService(
+                    services.artifacts,
+                    SqliteDocumentCatalog(context.harness_dir / "documents.db"),
+                    services.events,
+                ),
+            )
+
+            retried = coordinator.retry_preparation(expected_session_revision=8)
+
+            self.assertEqual(agent.phases, ["spec", "plan"])
+            self.assertEqual(retried.session.stage, MissionStage.TASK_REVIEW)
+            self.assertEqual(retried.session.active_task_id, "T-1")
+
     def test_mission_blocker_preserves_common_verifier_evidence(self) -> None:
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
             root = Path(raw)

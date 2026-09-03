@@ -29,6 +29,17 @@ class ToolAuthorizationError(PermissionError):
         self.reason = reason
         super().__init__(f"tool authorization rejected: phase={phase or 'unknown'} tool={tool} reason={reason}")
 
+    @property
+    def recoverable(self) -> bool:
+        """Return whether the model can safely correct the rejected arguments."""
+
+        return self.reason in {
+            "missing_write_path",
+            "project_write_not_allowed",
+            "harness_artifact_not_allowed",
+            "write_path_outside_authority",
+        }
+
 
 class Tool(Protocol):
     name: str

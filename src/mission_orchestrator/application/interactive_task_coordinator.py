@@ -225,6 +225,61 @@ class InteractiveTaskCoordinator:
                 self._close_mission_execution(execution_id, result)
             return result
 
+    def retry_preparation(self, *, expected_session_revision: int) -> PreparationResult:
+        """Retry a task whose spec or plan preparation was safely blocked."""
+
+        with self._action_lock:
+            current = self._expected(expected_session_revision, MissionStage.BLOCKED, "retry")
+            failed_phase = next(
+                (
+                    phase
+                    for phase in PREPARATION_PHASES
+                    if f"phase={phase.value}" in current.blocked_reason
+                ),
+                None,
+            )
+            if failed_phase is None:
+                raise InvalidSessionAction(current.stage, "retry_preparation")
+            tasks = self.services.tasks.load()
+            _, task = self._find_task(tasks, current.active_task_id)
+            self._materialize_task_contract(task.id)
+            running = current.move_to(
+                MissionStage.TASK_PREPARATION,
+                active_phase="task_preparation",
+                active_task_id=task.id,
+            )
+            self._save(current, running)
+            retrying = False
+            for phase in task_pipeline_for(task, self.context.mode).phases:
+                if phase not in PREPARATION_PHASES:
+                    continue
+                retrying = retrying or phase is failed_phase
+                if not retrying:
+                    continue
+                execution = self.phases.run(
+                    phase,
+                    variables={"TASK_ID": task.id, "TASK_TITLE": task.title},
+                )
+                if phase is PhaseName.PLAN and not self.services.artifacts.exists("decisions.md"):
+                    self.services.artifacts.write_text(
+                        "decisions.md",
+                        "# Decisions\n\n(not available yet)\n",
+                    )
+                self.documents.capture_task_documents(task.id)
+                if execution.block is not None:
+                    return self._block(running, str(execution.block))
+            review = running.move_to(
+                MissionStage.TASK_REVIEW,
+                active_phase="task_review",
+                active_task_id=task.id,
+            )
+            self._save(running, review)
+            self.services.events.publish(
+                "task_prepared",
+                {"task_id": task.id, "task_title": task.title, "retried": True},
+            )
+            return PreparationResult(review)
+
     def _close_mission_execution(
         self,
         execution_id: str,

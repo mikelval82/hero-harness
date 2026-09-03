@@ -49,6 +49,7 @@ class MissionControlPlane:
                 "request-amendment",
                 "prepare-task",
                 "execute-task",
+                "retry-preparation",
                 "retry-review",
             ],
             "features": {
@@ -294,6 +295,8 @@ class MissionControlPlane:
             )
         if action == "retry-review":
             return self.tasks.retry_review(expected_session_revision=revision)
+        if action == "retry-preparation":
+            return self.tasks.retry_preparation(expected_session_revision=revision)
         raise ValueError(f"unknown action: {action}")
 
     def submit_command(self, text: str) -> dict[str, object]:

@@ -76,7 +76,9 @@ _TRANSITIONS: dict[MissionStage, frozenset[MissionStage]] = {
     MissionStage.AMENDMENT_REVIEW: frozenset(
         {MissionStage.STRUCTURING, MissionStage.READY, MissionStage.BLOCKED}
     ),
-    MissionStage.BLOCKED: frozenset({MissionStage.DRAFT, MissionStage.PAUSED, MissionStage.EXECUTING}),
+    MissionStage.BLOCKED: frozenset(
+        {MissionStage.DRAFT, MissionStage.TASK_PREPARATION, MissionStage.PAUSED, MissionStage.EXECUTING}
+    ),
     MissionStage.COMPLETED: frozenset(),
 }
 

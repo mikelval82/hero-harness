@@ -165,6 +165,54 @@ class DeepSeekAgentClientTest(unittest.TestCase):
                 )
             )
 
+    def test_path_authorization_rejection_is_returned_for_correction(self) -> None:
+        tool_call = SimpleNamespace(
+            id="call-1",
+            function=SimpleNamespace(
+                name="Write",
+                arguments=json.dumps({"file_path": "plan.md", "content": "wrong phase"}),
+            ),
+        )
+        completions = _FakeCompletions(
+            [_response(tool_calls=[tool_call]), _response(text="corrected")]
+        )
+
+        class DenyingRegistry:
+            def execute(self, name, input, env, authority):  # noqa: ANN001
+                raise ToolAuthorizationError(
+                    authority.phase.value,
+                    name,
+                    "harness_artifact_not_allowed",
+                )
+
+        client = DeepSeekAgentClient.__new__(DeepSeekAgentClient)
+        client.tools = DenyingRegistry()
+        client.tool_env = None
+        client.command_bus = None
+        client.model = "deepseek-v4-flash"
+        client.max_tokens = 256
+        client.max_retries = 1
+        client.events = SimpleNamespace(publish=lambda kind, payload: None)
+        client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+        result = client.run_phase(
+            AgentRequest(
+                phase_name="spec",
+                system_prompt="Use tools.",
+                user_prompt="Write only spec.md.",
+                tool_names=("Write",),
+                tool_schemas=[],
+                authority=PhaseAuthority(PhaseName.SPEC, ("Write",)),
+                max_turns=3,
+                timeout_seconds=30,
+            )
+        )
+
+        self.assertEqual(result.text, "corrected")
+        tool_result = completions.calls[1]["messages"][-1]
+        self.assertTrue(tool_result["content"].startswith("ERROR:"))
+        self.assertIn("write was not performed", tool_result["content"])
+
     def test_truncated_response_is_rejected(self) -> None:
         response = _response(text="partial")
         response.choices[0].finish_reason = "length"

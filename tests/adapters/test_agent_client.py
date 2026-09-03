@@ -156,6 +156,33 @@ class ToolErrorHandlingTest(unittest.TestCase):
         with self.assertRaises(ToolAuthorizationError):
             client.run_phase(_request())
 
+    def test_path_authorization_rejection_is_returned_for_correction(self) -> None:
+        responses = [
+            SimpleNamespace(
+                content=[_tool_use("t1", "Write", {"file_path": "plan.md"})],
+                stop_reason="tool_use",
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            ),
+            SimpleNamespace(
+                content=[_text("corrected")],
+                stop_reason="end_turn",
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            ),
+        ]
+        client = _make_client(
+            responses,
+            _FakeRegistry(
+                ToolAuthorizationError("spec", "Write", "harness_artifact_not_allowed")
+            ),
+        )
+
+        result = client.run_phase(_request())
+
+        self.assertEqual(result.text, "corrected")
+        entry = client._client.messages.calls[1]["messages"][-1]["content"][0]
+        self.assertTrue(entry["is_error"])
+        self.assertIn("write was not performed", entry["content"])
+
     def test_truncated_response_is_rejected(self) -> None:
         client = _make_client([SimpleNamespace(content=[_text("partial")], stop_reason="max_tokens", usage=SimpleNamespace(input_tokens=1, output_tokens=1))], _FakeRegistry(KeyError("unused")))
         with self.assertRaisesRegex(ProviderOutcomeError, "max_tokens"):

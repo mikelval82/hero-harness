@@ -146,8 +146,14 @@ class DeepSeekAgentClient:
                         result = self.tools.execute(
                             call["name"], call["input"], self.tool_env, request.authority
                         )
-                    except ToolAuthorizationError:
-                        raise
+                    except ToolAuthorizationError as exc:
+                        if not exc.recoverable:
+                            raise
+                        is_error = True
+                        result = (
+                            f"{exc}. The write was not performed. Correct the file_path "
+                            "to the exact project or harness path authorized by this phase."
+                        )
                     except Exception as exc:
                         is_error = True
                         result = f"{exc.__class__.__name__}: {exc}"
