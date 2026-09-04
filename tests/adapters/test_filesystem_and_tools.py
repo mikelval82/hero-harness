@@ -14,7 +14,7 @@ from mission_orchestrator.adapters.filesystem.artifact_store import FilesystemAr
 from mission_orchestrator.adapters.filesystem.task_repository import JsonTaskRepository
 from mission_orchestrator.adapters.tools.bash_executor import BashTool
 from mission_orchestrator.adapters.tools.bash_policy import BashPolicy
-from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, WriteTool
+from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, WriteJsonTool, WriteTool
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
 from mission_orchestrator.adapters.tools.process_environment import sanitized_child_environment
 from mission_orchestrator.adapters.tools.validation_runner import RunValidationTool
@@ -86,6 +86,30 @@ class FilesystemAndToolsTest(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 ReadTool(policy).execute({"file_path": str(Path(project).parent / "outside.txt")}, env)
 
+    def test_write_json_validates_structured_phase_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as project, tempfile.TemporaryDirectory() as harness:
+            env = ToolEnvironment(Path(project), Path(harness))
+            tool = WriteJsonTool(PathPolicy())
+            valid_task = {
+                "id": "task-1",
+                "title": "Create helper",
+                "complexity": "S",
+                "status": "pending",
+                "failure_reason": "",
+                "covers": [],
+                "dependencies": [],
+                "target_nodes": [],
+            }
+            tool.execute({"file_path": "tasks.json", "content": json.dumps([valid_task])}, env)
+            self.assertEqual(json.loads((Path(project) / "tasks.json").read_text())[0]["id"], "task-1")
+            with self.assertRaisesRegex(ValueError, "requires the WriteJson tool"):
+                WriteTool(PathPolicy()).execute({"file_path": "tasks.json", "content": "[]"}, env)
+            with self.assertRaisesRegex(ValueError, "missing fields"):
+                tool.execute(
+                    {"file_path": "tasks.json", "content": json.dumps([{ "id": "task-2" }])},
+                    env,
+                )
+
     def test_bash_external_process_uses_argv_without_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as project, tempfile.TemporaryDirectory() as harness:
             env = ToolEnvironment(Path(project), Path(harness))
@@ -130,7 +154,7 @@ class FilesystemAndToolsTest(unittest.TestCase):
             )
             bash = BashTool(BashPolicy(PathPolicy()))
             with patch.dict("os.environ", {"PATH": __import__("os").environ["PATH"], "DEEPSEEK_API_KEY": "secret"}, clear=True):
-                result = bash.execute({"command": "python env_probe.py"}, ToolEnvironment(project_dir, Path(harness)))
+                result = bash.execute({"command": "python3 env_probe.py"}, ToolEnvironment(project_dir, Path(harness)))
             self.assertEqual(result, "exit=0\nmissing")
 
     def test_validation_uses_fixed_runtime_selection_and_sanitized_environment(self) -> None:

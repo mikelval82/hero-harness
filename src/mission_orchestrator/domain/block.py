@@ -17,6 +17,14 @@ class BlockKind(Enum):
     USER_REJECTED = "user_rejected"
     STRUCTURE = "structure"
 
+    @property
+    def recoverable(self) -> bool:
+        return self not in {
+            BlockKind.USER_ABORT,
+            BlockKind.USER_REJECTED,
+            BlockKind.SIGNAL,
+        }
+
 
 @dataclass(frozen=True)
 class BlockReason:
@@ -27,6 +35,31 @@ class BlockReason:
     @property
     def is_mission_abort(self) -> bool:
         return self.kind in {BlockKind.USER_ABORT, BlockKind.SIGNAL}
+
+    @property
+    def recoverable(self) -> bool:
+        return self.kind.recoverable
+
+    @property
+    def recovery_action(self) -> str:
+        if not self.recoverable:
+            return "abort"
+        if self.kind is BlockKind.GATE_FAIL and "changeset has unresolved issues" in self.detail:
+            return "retry-design"
+        if self.phase == "review":
+            return "retry-review"
+        if self.phase in {"spec", "plan", "implement", "implement_bursts", "reimplement"}:
+            return "retry-preparation" if self.phase in {"spec", "plan"} else "resume"
+        return "resume"
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "kind": self.kind.value,
+            "phase": self.phase,
+            "detail": self.detail,
+            "recoverable": self.recoverable,
+            "recovery_action": self.recovery_action,
+        }
 
     def __str__(self) -> str:
         bits = [self.kind.value]

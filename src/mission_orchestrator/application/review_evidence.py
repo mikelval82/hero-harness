@@ -92,9 +92,14 @@ def _validate_checks(checks: list[dict[str, Any]]) -> None:
 def _validate_failures(failures: list[dict[str, Any]]) -> None:
     for failure in failures:
         if not str(failure.get("id", "")).strip():
-            raise ValueError("review evidence failure requires id")
+            raise ValueError("review evidence failure requires id (for example F1)")
         if failure.get("failure_type") not in FAILURE_TYPES:
-            raise ValueError("review evidence failure has invalid failure_type")
+            allowed = ", ".join(sorted(FAILURE_TYPES))
+            raise ValueError(f"review evidence failure has invalid failure_type; allowed: {allowed}")
         if failure.get("recoverability_lost_at_stage") not in RECOVERY_STAGES:
-            raise ValueError("review evidence failure has invalid recoverability_lost_at_stage")
+            allowed = ", ".join(sorted(RECOVERY_STAGES))
+            raise ValueError(
+                "review evidence failure has invalid recoverability_lost_at_stage; "
+                f"allowed: {allowed}"
+            )
         _references(failure.get("evidence_refs"), "failure")

@@ -5,6 +5,12 @@ from enum import Enum
 from typing import Any
 
 
+def normalize_task_id(value: object) -> str:
+    """Normalize the common model-generated ``task:`` ID prefix."""
+    task_id = str(value or "").strip()
+    return task_id.removeprefix("task:")
+
+
 class TaskComplexity(Enum):
     S = "S"
     M = "M"
@@ -49,13 +55,13 @@ class Task:
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "Task":
         return cls(
-            id=str(data.get("id", "")).strip(),
+            id=normalize_task_id(data.get("id", "")),
             title=str(data.get("title", "")).strip(),
             complexity=TaskComplexity.parse(data.get("complexity", TaskComplexity.M.value)),
             status=TaskStatus.parse(data.get("status", TaskStatus.PENDING.value)),
             failure_reason=str(data.get("failure_reason", "")),
             covers=[str(item) for item in data.get("covers", []) or []],
-            dependencies=[str(item) for item in data.get("dependencies", []) or []],
+            dependencies=[normalize_task_id(item) for item in data.get("dependencies", []) or []],
             target_nodes=[str(item) for item in data.get("target_nodes", []) or []],
         )
 
@@ -87,4 +93,3 @@ def summarize_tasks(tasks: list[Task]) -> str:
         elif task.status == TaskStatus.BLOCKED:
             lines.append(f"BLOCKED [{task.id}]: {task.failure_reason or 'unknown'}")
     return "\n".join(lines)
-

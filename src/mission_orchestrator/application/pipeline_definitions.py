@@ -14,6 +14,12 @@ def mission_pipeline_for(mode: MissionMode, *, no_grill: bool) -> MissionPipelin
             task_loop=True,
             finalize=(PhaseName.REPORT,),
         )
+    if mode == MissionMode.SIMPLE:
+        return MissionPipeline(
+            init=(PhaseName.RESEARCH, PhaseName.STRUCTURE),
+            task_loop=True,
+            finalize=(PhaseName.REPORT,),
+        )
     if mode == MissionMode.FOCUSED:
         return MissionPipeline(
             init=(PhaseName.RESEARCH, PhaseName.STRUCTURE),
@@ -54,4 +60,4 @@ def task_pipeline_for(task: Task, mode: MissionMode) -> TaskPipeline:
 
 
 def mode_should_merge(mode: MissionMode) -> bool:
-    return mode in {MissionMode.FULL, MissionMode.FOCUSED, MissionMode.HOTFIX}
+    return mode in {MissionMode.FULL, MissionMode.SIMPLE, MissionMode.FOCUSED, MissionMode.HOTFIX}

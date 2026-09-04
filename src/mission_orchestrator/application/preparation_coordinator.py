@@ -51,7 +51,7 @@ class PreparationCoordinator:
         self.documents = documents
         self.catalog = catalog
         self.phases = PhaseExecutor(services, context)
-        self._action_lock = threading.Lock()
+        self._action_lock = threading.RLock()
 
     def session(self) -> MissionSession:
         return self.sessions.load(self.context.mission_tag)
@@ -218,6 +218,55 @@ class PreparationCoordinator:
                 (MissionStage.DESIGN_REVIEW, MissionStage.AMENDMENT_REVIEW),
                 "approve_design",
             )
+            return self._approve_design_and_structure(
+                current,
+                base_design_revision=base_design_revision,
+                base_brief_revision=base_brief_revision,
+            )
+
+    def retry_design(self, *, expected_session_revision: int) -> PreparationResult:
+        """Re-run design approval after a transient or fixed changeset validation error."""
+        with self._action_lock:
+            current = self._expected(expected_session_revision, MissionStage.BLOCKED, "retry")
+            if "changeset has unresolved issues" not in current.blocked_reason:
+                raise InvalidSessionAction(current.stage, "retry_design")
+            design = DesignStore(self.context.harness_dir / "design.db")
+            brief = self.catalog.get("mission/brief")
+            review = current.move_to(MissionStage.DESIGN_REVIEW, active_phase="design_review")
+            self._save(current, review)
+            return self._approve_design_and_structure(
+                review,
+                base_design_revision=design.current_revision(),
+                base_brief_revision=brief.revision if brief is not None else None,
+            )
+
+    def retry_blocked(self, *, expected_session_revision: int) -> PreparationResult:
+        """Resume a recoverable preparation phase from its last safe boundary."""
+        with self._action_lock:
+            current = self._expected(expected_session_revision, MissionStage.BLOCKED, "retry")
+            phase = ""
+            marker = "phase="
+            if marker in current.blocked_reason:
+                phase = current.blocked_reason.split(marker, 1)[1].split(" | ", 1)[0]
+            if phase == PhaseName.RESEARCH.value:
+                draft = current.move_to(MissionStage.DRAFT)
+                self._save(current, draft)
+                return self.run_research(expected_session_revision=draft.revision)
+            if phase == PhaseName.GRILL.value:
+                review = current.move_to(MissionStage.RESEARCH_REVIEW)
+                self._save(current, review)
+                return self.run_grill(expected_session_revision=review.revision)
+            if phase == PhaseName.STRUCTURE.value or "changeset has unresolved issues" in current.blocked_reason:
+                return self.retry_design(expected_session_revision=current.revision)
+            raise InvalidSessionAction(current.stage, "retry")
+
+    def _approve_design_and_structure(
+        self,
+        current: MissionSession,
+        *,
+        base_design_revision: int,
+        base_brief_revision: int | None,
+    ) -> PreparationResult:
             design = DesignApprovalService(
                 harness_dir=self.context.harness_dir,
                 project_scope_dir=self.context.project_scope_dir,

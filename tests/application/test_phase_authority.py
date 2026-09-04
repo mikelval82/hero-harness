@@ -84,7 +84,7 @@ class PhaseAuthorityTest(unittest.TestCase):
         )
         self.assertEqual(
             {schema["name"] for schema in review},
-            {"Read", "Glob", "Grep", "Write", "RunValidation"},
+            {"Read", "Glob", "Grep", "Write", "WriteJson", "RunValidation"},
         )
 
     def test_non_implementing_phase_cannot_write_the_project_and_emits_safe_telemetry(self) -> None:

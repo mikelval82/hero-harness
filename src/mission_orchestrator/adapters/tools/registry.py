@@ -4,7 +4,7 @@ from pathlib import Path
 
 from mission_orchestrator.adapters.tools.bash_executor import BashTool
 from mission_orchestrator.adapters.tools.bash_policy import BashPolicy
-from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, WriteTool
+from mission_orchestrator.adapters.tools.file_tools import EditTool, ReadTool, WriteJsonTool, WriteTool
 from mission_orchestrator.adapters.tools.graph_tools import CodeGraphTool, GraphProposeTool, GraphQueryTool
 from mission_orchestrator.adapters.tools.path_policy import PathPolicy
 from mission_orchestrator.adapters.tools.search_tools import GlobTool, GrepTool
@@ -148,6 +148,7 @@ def default_tool_registry(logger: MissionLogger | None = None) -> LocalToolRegis
     registry = LocalToolRegistry(logger, path_policy=path_policy)
     registry.register(ReadTool(path_policy))
     registry.register(WriteTool(path_policy))
+    registry.register(WriteJsonTool(path_policy))
     registry.register(EditTool(path_policy))
     registry.register(GlobTool(path_policy))
     registry.register(GrepTool(path_policy))

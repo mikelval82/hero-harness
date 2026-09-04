@@ -4,10 +4,11 @@ from mission_orchestrator.domain.phase import PhaseConfig, PhaseName
 
 READ_TOOLS = ("Read", "Glob", "Grep")
 ARTIFACT_TOOLS = (*READ_TOOLS, "Write")
+STRUCTURE_TOOLS = (*READ_TOOLS, "WriteJson")
 IMPL_TOOLS = (*ARTIFACT_TOOLS, "Edit", "Bash")
 DESIGN_TOOLS = (*ARTIFACT_TOOLS, "CodeGraph", "GraphQuery", "GraphPropose")
 IMPLEMENT_DESIGN_TOOLS = (*IMPL_TOOLS, "CodeGraph", "GraphQuery", "GraphPropose")
-REVIEW_TOOLS = (*ARTIFACT_TOOLS, "RunValidation")
+REVIEW_TOOLS = (*ARTIFACT_TOOLS, "WriteJson", "RunValidation")
 
 GRAPH = "__graph_instructions__"
 
@@ -33,7 +34,7 @@ PHASES: dict[PhaseName, PhaseConfig] = {
         "structurer.md",
         "structure-prompt.md",
         None,
-        ARTIFACT_TOOLS,
+        STRUCTURE_TOOLS,
         30,
         1200,
         {"BRAINSTORM": "brainstorm.md", "BRIEF": "brief.md", "CHANGESET": "changeset.json"},

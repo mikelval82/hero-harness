@@ -204,6 +204,32 @@ class GatesAndMarkdownTest(unittest.TestCase):
         store.files["review-evidence.json"] = json.dumps(evidence)
         self.assertTrue(MarkdownGateEvaluator(store).evaluate("review", "audit.md").passed)
 
+    def test_review_gate_reports_allowed_failure_taxonomy_values(self) -> None:
+        audit = "# Audit\n\n## Verdict\nMINOR_CHANGES\n\nNotes\n**STATUS: DONE**\n"
+        evidence = {
+            "schema_version": 1,
+            "claims": [],
+            "checks": [
+                {"id": "hardcoding", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                {"id": "special_casing", "status": "pass", "evidence_refs": ["src/a.py:1"]},
+                {"id": "scope", "status": "pass", "evidence_refs": ["status.md"]},
+            ],
+            "failures": [
+                {
+                    "id": "F1",
+                    "failure_type": "invented_type",
+                    "recoverability_lost_at_stage": "implement",
+                    "evidence_refs": ["src/a.py:1"],
+                }
+            ],
+        }
+        result = MarkdownGateEvaluator(
+            MemoryArtifacts({"audit.md": audit, "review-evidence.json": json.dumps(evidence)})
+        ).evaluate("review", "audit.md")
+        self.assertFalse(result.passed)
+        self.assertIn("allowed:", result.detail)
+        self.assertIn("technical_bug", result.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,12 +45,14 @@ class MissionControlPlane:
                 "grill",
                 "skip-grill",
                 "approve-design",
+                "retry-design",
                 "approve-execution",
                 "request-amendment",
                 "prepare-task",
                 "execute-task",
                 "retry-preparation",
                 "retry-review",
+                "retry",
             ],
             "features": {
                 "versioned_documents": True,
@@ -62,6 +64,9 @@ class MissionControlPlane:
                 "contract_execution": True,
                 "code_graph_queries": True,
                 "read_only_ask": self.questions is not None,
+                "structured_phase_outputs": True,
+                "recoverable_blocks": True,
+                "phase_resume": True,
             },
             "event_wait_seconds": 30,
         }
@@ -74,6 +79,21 @@ class MissionControlPlane:
             tasks = []
         design = DesignStore(self.context.harness_dir / "design.db")
         facts = self._facts()
+        blocked = None
+        if session.blocked_reason:
+            from mission_orchestrator.domain.block import BlockKind, BlockReason
+
+            raw_kind, _, remainder = session.blocked_reason.partition(" | ")
+            try:
+                kind = BlockKind(raw_kind)
+            except ValueError:
+                kind = BlockKind.STRUCTURE
+            phase = ""
+            detail = remainder
+            if remainder.startswith("phase="):
+                phase, _, detail = remainder.partition(" | ")
+                phase = phase.removeprefix("phase=")
+            blocked = BlockReason(kind, phase, detail).to_json()
         return {
             "api_version": "v1",
             "mission": session.to_json()
@@ -82,6 +102,7 @@ class MissionControlPlane:
                 "project_dir": str(self.context.project_dir),
                 "branch": self.context.branch,
                 "mode": self.context.mode.value,
+                "blocked": blocked,
             },
             "tasks": tasks,
             "documents": [item.metadata() for item in self.catalog.list_latest()],
@@ -279,6 +300,8 @@ class MissionControlPlane:
                 base_design_revision=self._required_int(body, "base_design_revision"),
                 base_brief_revision=self._optional_int(body, "base_brief_revision"),
             )
+        if action == "retry-design":
+            return self.preparation.retry_design(expected_session_revision=revision)
         if action == "approve-execution":
             return self.preparation.approve_execution(expected_session_revision=revision)
         if action == "request-amendment":
@@ -297,6 +320,13 @@ class MissionControlPlane:
             return self.tasks.retry_review(expected_session_revision=revision)
         if action == "retry-preparation":
             return self.tasks.retry_preparation(expected_session_revision=revision)
+        if action == "retry":
+            session = self.sessions.load(self.context.mission_tag)
+            if "phase=review" in session.blocked_reason:
+                return self.tasks.retry_review(expected_session_revision=revision)
+            if "phase=spec" in session.blocked_reason or "phase=plan" in session.blocked_reason:
+                return self.tasks.retry_preparation(expected_session_revision=revision)
+            return self.preparation.retry_blocked(expected_session_revision=revision)
         raise ValueError(f"unknown action: {action}")
 
     def submit_command(self, text: str) -> dict[str, object]:

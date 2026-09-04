@@ -26,6 +26,10 @@ class WorkerArgumentsTest(unittest.TestCase):
         args = parse_args(["--project", ".", "--mode", "spec-plan"])
         self.assertEqual(args.mode, "spec-plan")
 
+    def test_worker_accepts_simple_mode(self) -> None:
+        args = parse_args(["--project", ".", "--mode", "simple"])
+        self.assertEqual(args.mode, "simple")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,4 +30,12 @@ class PlanCompiler:
             return set()
         graph = SQLiteCodeGraph(facts_path)
         with graph.session() as connection:
-            return {row[0] for row in connection.execute("SELECT id FROM nodes")}
+            # Design locators use repository-relative paths, while extracted
+            # graph node ids are namespaced by the mission/project.  Accept
+            # both representations when resolving CHANGE/REMOVE targets.
+            observed: set[str] = set()
+            for node_id, file_path in connection.execute("SELECT id, file FROM nodes"):
+                observed.add(str(node_id))
+                if file_path:
+                    observed.add(str(file_path).replace("\\", "/"))
+            return observed

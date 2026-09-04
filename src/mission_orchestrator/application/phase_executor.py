@@ -196,6 +196,7 @@ class PhaseExecutor:
             "outcome": "blocked",
             "block_kind": kind.value,
             "detail": detail,
+            "recoverable": kind.recoverable,
         }
         if metrics is not None:
             payload.update(

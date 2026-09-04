@@ -15,12 +15,27 @@ from mission_orchestrator.domain.task import Task, TaskComplexity, TaskStatus, s
 
 
 class DomainContractsTest(unittest.TestCase):
+    def test_task_json_normalizes_model_task_prefix(self) -> None:
+        task = Task.from_json(
+            {
+                "id": "task:docs-tree-tracking",
+                "title": "Track docs",
+                "dependencies": ["task:extractor-markdown-dispatch"],
+            }
+        )
+        self.assertEqual(task.id, "docs-tree-tracking")
+        self.assertEqual(task.dependencies, ["extractor-markdown-dispatch"])
+
     def test_pipeline_selection(self) -> None:
         full = mission_pipeline_for(MissionMode.FULL, no_grill=False)
         self.assertEqual(
             full.init,
             (PhaseName.RESEARCH, PhaseName.COMPACT, PhaseName.GRILL, PhaseName.STRUCTURE),
         )
+        simple = mission_pipeline_for(MissionMode.SIMPLE, no_grill=False)
+        self.assertEqual(simple.init, (PhaseName.RESEARCH, PhaseName.STRUCTURE))
+        self.assertTrue(simple.task_loop)
+        self.assertTrue(mode_should_merge(MissionMode.SIMPLE))
         self.assertEqual(
             task_pipeline_for(Task("T-1", "large", TaskComplexity.L), MissionMode.FULL).phases,
             (PhaseName.SPEC, PhaseName.PLAN, PhaseName.IMPLEMENT_BURSTS, PhaseName.REVIEW),
@@ -56,6 +71,14 @@ class DomainContractsTest(unittest.TestCase):
         answer = parse_control_command("plain human answer")
         self.assertEqual(answer.kind, CommandKind.ANSWER)
         self.assertEqual(answer.text, "plain human answer")
+
+    def test_block_reason_exposes_recovery_policy(self) -> None:
+        recoverable = BlockReason(BlockKind.GATE_FAIL, "structure", "invalid changeset")
+        self.assertTrue(recoverable.recoverable)
+        self.assertEqual(recoverable.recovery_action, "resume")
+        terminal = BlockReason(BlockKind.USER_REJECTED, "review", "rejected")
+        self.assertFalse(terminal.recoverable)
+        self.assertEqual(terminal.recovery_action, "abort")
 
     def test_task_summary(self) -> None:
         tasks = [

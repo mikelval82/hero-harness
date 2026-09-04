@@ -7,6 +7,7 @@ from pathlib import Path
 
 class MissionMode(Enum):
     FULL = "full"
+    SIMPLE = "simple"
     FOCUSED = "focused"
     PLAN = "plan"
     SPEC = "spec"

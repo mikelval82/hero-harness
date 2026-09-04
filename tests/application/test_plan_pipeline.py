@@ -61,6 +61,30 @@ class ValidatePlanTest(unittest.TestCase):
         self.assertTrue(any("cycle" in error.lower() for error in cyclic))
 
 
+class PlanCompilerObservedLocatorTest(unittest.TestCase):
+    def test_file_locator_matches_namespaced_observed_node(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            harness = Path(tmp)
+            facts = harness / "code_graph.db"
+            from mission_orchestrator.adapters.analysis.sqlite_graph import SQLiteCodeGraph
+
+            store = SQLiteCodeGraph(facts)
+            with store.session() as connection:
+                connection.execute(
+                    "INSERT INTO nodes(id, type, file, name) VALUES (?, ?, ?, ?)",
+                    (
+                        "file:mission:src/hero_graph_lab/static/styles.css",
+                        "file",
+                        "src/hero_graph_lab/static/styles.css",
+                        "styles.css",
+                    ),
+                )
+            observed = PlanCompiler(harness, FilesystemArtifactStore(harness))._observed_ids()
+
+            self.assertIn("file:mission:src/hero_graph_lab/static/styles.css", observed)
+            self.assertIn("src/hero_graph_lab/static/styles.css", observed)
+
+
 class TaskRoundtripTest(unittest.TestCase):
     def test_d4_new_fields_roundtrip_and_legacy_load(self) -> None:
         task = Task(

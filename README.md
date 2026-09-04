@@ -81,6 +81,11 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m mission_orchestrator.cli "Implement foo" feature/foo --mode plan
 ```
 
+Los modos disponibles son `full`, `simple`, `focused`, `plan`, `spec`,
+`explore` y `hotfix`. `simple` ejecuta Research, Structure y el ciclo completo
+de tareas sin Compact ni Grill; `spec` solo genera especificaciones y
+planificación; `hotfix` presupone que las tareas ya están preparadas.
+
 Para usar el script `mission`, instala el paquete en editable:
 
 ```powershell
